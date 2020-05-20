@@ -99,7 +99,12 @@ char *find_libobs_data_file(const char *file)
 	}
 
 	dstr_cat(&path, file);
-	return path.array;
+
+	if (os_file_exists(path.array)) {
+		return path.array;
+	}
+
+	return NULL;
 }
 
 static void log_processor_name(void)
