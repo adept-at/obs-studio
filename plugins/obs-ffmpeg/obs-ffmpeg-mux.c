@@ -232,7 +232,9 @@ static void build_command_line(struct ffmpeg_muxer *stream, struct dstr *cmd,
 		num_tracks++;
 	}
 
-	dstr_init_move_array(cmd, os_get_executable_path_ptr(FFMPEG_MUX));
+	const char* parentDir = obs_get_executable_path();
+
+	dstr_init_move_array(cmd, os_get_executable_path_in_dir_ptr(parentDir, FFMPEG_MUX));
 	dstr_insert_ch(cmd, 0, '\"');
 	dstr_cat(cmd, "\" \"");
 

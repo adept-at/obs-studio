@@ -451,6 +451,9 @@ EXPORT const char *obs_get_module_data_path(obs_module_t *module);
  */
 EXPORT void obs_add_module_path(const char *bin, const char *data);
 
+EXPORT void obs_set_executable_path(const char *path);
+EXPORT const char* obs_get_executable_path();
+
 /** Automatically loads all modules from module paths (convenience function) */
 EXPORT void obs_load_all_modules(void);
 

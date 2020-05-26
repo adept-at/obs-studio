@@ -173,6 +173,26 @@ char *os_get_executable_path_ptr(const char *name)
 	return path.array;
 }
 
+char *os_get_executable_path_in_dir_ptr(const char* parentDir, const char *name)
+{
+	char exe[PATH_MAX];
+	struct dstr path;
+	char *slash;
+
+	dstr_init_copy(&path, parentDir);
+
+	slash = strrchr(path.array, '/');
+	if (slash) {
+		size_t len = slash - path.array + 1;
+		dstr_resize(&path, len);
+	}
+
+	if (name && *name) {
+		dstr_cat(&path, name);
+	}
+	return path.array;
+}
+
 struct os_cpu_usage_info {
 	int64_t last_cpu_time;
 	int64_t last_sys_time;

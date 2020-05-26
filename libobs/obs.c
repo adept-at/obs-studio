@@ -25,8 +25,20 @@
 
 struct obs_core *obs = NULL;
 
+static char exe_path[1024] = {0};
+
 extern void add_default_module_paths(void);
 extern char *find_libobs_data_file(const char *file);
+
+inline void obs_set_executable_path(const char* path)
+{
+	snprintf(exe_path, 1024, "%s", path);
+}
+
+const char* obs_get_executable_path()
+{
+	return (const char*) exe_path;
+}
 
 static inline void make_video_info(struct video_output_info *vi,
 				   struct obs_video_info *ovi)

@@ -14,8 +14,11 @@ set(obs-cli_LIBRARIES
 	libobs
 	)
 
+include_directories(${OBS_JANSSON_INCLUDE_DIRS})
+
 target_link_libraries(obs-cli
 	${obs-cli_LIBRARIES}
+	${OBS_JANSSON_IMPORT}
 	)
 
 set_target_properties(obs-cli PROPERTIES FOLDER "plugins/obs-cli")
