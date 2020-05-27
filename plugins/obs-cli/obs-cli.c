@@ -60,6 +60,30 @@ static int initialize(json_t* obj)
     }
 	const char* outputFilePath = json_string_value(outputFileObj);
 
+	json_t* displayNumObj = json_object_get(obj, "displayNum");
+	if(!json_is_integer(displayNumObj))
+    {
+        fprintf(stderr, "error: displayNum is not an integer\n");
+        return 0;
+    }
+	int displayNum = json_integer_value(displayNumObj);
+
+	json_t* inputWidthObj = json_object_get(obj, "inputWidth");
+	if(!json_is_integer(inputWidthObj))
+    {
+        fprintf(stderr, "error: inputWidth is not an integer\n");
+        return 0;
+    }
+	int inputWidth = json_integer_value(inputWidthObj);
+
+	json_t* inputHeightObj = json_object_get(obj, "inputHeight");
+	if(!json_is_integer(inputHeightObj))
+    {
+        fprintf(stderr, "error: inputHeight is not an integer\n");
+        return 0;
+    }
+	int inputHeight = json_integer_value(inputHeightObj);
+
 	if (!obs_startup("en", ".", NULL)) {
 		blog(LOG_ERROR, "Failed to start");
 		return 1;
@@ -73,8 +97,8 @@ static int initialize(json_t* obj)
 	ovi.graphics_module = "libobs-opengl";
 	ovi.fps_num = 30000;
 	ovi.fps_den = 1000;
-	ovi.base_width = 5120;
-	ovi.base_height = 2880;
+	ovi.base_width = inputWidth;
+	ovi.base_height = inputHeight;
 	ovi.output_width = 1280;
 	ovi.output_height = 720;
 	ovi.output_format = VIDEO_FORMAT_RGBA;
@@ -116,8 +140,12 @@ static int initialize(json_t* obj)
 
 	blog(LOG_INFO, "Created audio encoder");
 
-	obs_source_t *source = obs_source_create("display_capture",
-						 "Display Capture", NULL, NULL);
+	obs_data_t *displaySettings = obs_data_create();
+	obs_data_set_int(displaySettings, "display", displayNum);
+
+	blog(LOG_INFO, "Set display to %d", displayNum);
+
+	obs_source_t *source = obs_source_create("display_capture", "Display Capture", displaySettings, NULL);
 	if (!source) {
 		blog(LOG_ERROR, "Unable to create source");
 		return 1;
