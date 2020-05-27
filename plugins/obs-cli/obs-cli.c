@@ -125,6 +125,14 @@ static int initialize(json_t* obj)
 		blog(LOG_INFO, "Created display capture!");
 	}
 
+	obs_source_t *audioSource = obs_source_create("coreaudio_input_capture", "Microphone", NULL, NULL);
+	if (!audioSource) {
+		blog(LOG_ERROR, "Unable to create audio source");
+		return 1;
+	} else {
+		blog(LOG_INFO, "Created audio source");
+	}
+
 	fileOutput = obs_output_create(
 		"ffmpeg_muxer", "simple_file_output", NULL, NULL);
 	if (!fileOutput) {
@@ -139,6 +147,8 @@ static int initialize(json_t* obj)
 	// obs_scene_t *scene = obs_scene_create("Test");
 
 	obs_set_output_source(0, source);
+	obs_set_output_source(1, audioSource);
+
 	obs_encoder_set_video(encoder, obs_get_video());
 	obs_encoder_set_audio(audioEncoder, obs_get_audio());
 	obs_output_set_video_encoder(fileOutput, encoder);
@@ -184,7 +194,6 @@ static const json_t* parse_command(json_t* command)
 		fprintf(stderr, "Shutting down");
 		obs_set_output_source(0, NULL);
 		obs_shutdown();
-		exit(0);
 	}
 
 	return NULL;
