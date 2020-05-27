@@ -1,0 +1,5 @@
+Set the path to qt when running cmake
+
+mkdir build
+cd build
+cmake .. -DCMAKE_PREFIX_PATH=/usr/local/Cellar/qt/5.13.1
