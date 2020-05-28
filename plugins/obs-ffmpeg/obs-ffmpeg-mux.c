@@ -218,6 +218,8 @@ static void add_muxer_params(struct dstr *cmd, struct ffmpeg_muxer *stream)
 static void build_command_line(struct ffmpeg_muxer *stream, struct dstr *cmd,
 			       const char *path)
 {
+	blog(LOG_INFO, "In build_command_line");
+
 	obs_encoder_t *vencoder = obs_output_get_video_encoder(stream->output);
 	obs_encoder_t *aencoders[MAX_AUDIO_MIXES];
 	int num_tracks = 0;
@@ -232,11 +234,28 @@ static void build_command_line(struct ffmpeg_muxer *stream, struct dstr *cmd,
 		num_tracks++;
 	}
 
+	const char* DYLD_LIBRARY_PATH = getenv("DYLD_LIBRARY_PATH");
 	const char* parentDir = obs_get_executable_path();
 
-	dstr_init_move_array(cmd, os_get_executable_path_in_dir_ptr(parentDir, FFMPEG_MUX));
-	dstr_insert_ch(cmd, 0, '\"');
+	dstr_init_copy(cmd, "DYLD_LIBRARY_PATH=");
+	blog(LOG_INFO, "cmd so far: %s", cmd->array);
+
+	if (DYLD_LIBRARY_PATH!=NULL)
+	{
+		blog(LOG_INFO, "Copying in path: %s", DYLD_LIBRARY_PATH);
+		dstr_cat(cmd, DYLD_LIBRARY_PATH);
+		blog(LOG_INFO, "cmd so far: %s", cmd->array);
+
+		dstr_cat(cmd, " ");
+	}
+
+	blog(LOG_INFO, "cmd so far: %s", cmd->array);
+
+	dstr_cat(cmd, "\"");
+	dstr_cat(cmd, os_get_executable_path_in_dir_ptr(parentDir, FFMPEG_MUX));
 	dstr_cat(cmd, "\" \"");
+
+	blog(LOG_INFO, "cmd so far: %s", cmd->array);
 
 	dstr_copy(&stream->path, path);
 	dstr_replace(&stream->path, "\"", "\"\"");
@@ -256,6 +275,8 @@ static void build_command_line(struct ffmpeg_muxer *stream, struct dstr *cmd,
 	}
 
 	add_muxer_params(cmd, stream);
+
+	blog(LOG_INFO, "Running command: %s", cmd->array);
 }
 
 static inline void start_pipe(struct ffmpeg_muxer *stream, const char *path)
