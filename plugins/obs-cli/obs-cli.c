@@ -16,6 +16,9 @@
 #define OBSCLI_LOGFILE_ENV "OBSCLI_LOGFILE_ENV"
 
 static obs_output_t *fileOutput = NULL;
+static obs_source_t *audioSource = NULL;
+static obs_source_t *webcamSource = NULL;
+
 
 static void null_log_handler(int log_level, const char *format, va_list args,
 			     void *param)
@@ -173,23 +176,24 @@ static int initialize(json_t* obj)
 	obs_data_t *audioSettings = obs_data_create();
 	obs_data_set_string(audioSettings, "device_id", "AppleUSBAudioEngine:Sony Computer Entertainment:Wired USB Headset:14130000:1");
 
-	obs_source_t *audioSource = obs_source_create("coreaudio_input_capture", "Microphone", audioSettings, NULL);
+	audioSource = obs_source_create("coreaudio_input_capture", "Microphone", audioSettings, NULL);
 	if (!audioSource) {
 		blog(LOG_ERROR, "Unable to create audio source");
-		return 1;
 	} else {
 		blog(LOG_INFO, "Created audio source");
 	}
 
 
+/*
 	obs_data_t *avSettings = obs_data_create();
 	obs_data_set_string(avSettings, "device", "0x1420000005ac8600");
+	webcamSource = obs_source_create("av_capture_input", "Webcam Capture", avSettings, NULL);
+*/
 
-	obs_source_t *webcamSource = obs_source_create("av_capture_input", "Webcam Capture", avSettings, NULL);
+	webcamSource = obs_source_create("av_capture_input", "Webcam Capture", NULL, NULL);
 
 	if (!webcamSource) {
 		blog(LOG_ERROR, "Unable to create webcam source");
-		return 1;
 	} else {
 		blog(LOG_INFO, "created av capture!");
 	}
@@ -205,36 +209,6 @@ static int initialize(json_t* obj)
 	obs_data_set_string(settings, "path", outputFilePath);
 	obs_output_update(fileOutput, settings);
 
-	obs_scene_t *scene = obs_scene_create("Test");
-
-	struct obs_scene_item *item;
-
-	item = obs_scene_add(scene, source);
-	if (item == NULL) {
-		blog(LOG_ERROR, "Could not add scene item");
-	} else {
-		blog(LOG_INFO, "Added video to scene");
-	}
-
-	item = obs_scene_add(scene, webcamSource);
-	if (item == NULL) {
-		blog(LOG_ERROR, "Could not add scene item");
-	} else {
-		blog(LOG_INFO, "Added webcam to scene");
-	}
-
-	item = obs_scene_add(scene, audioSource);
-	if (item == NULL) {
-		blog(LOG_ERROR, "Could not add scene item");
-	} else {
-		blog(LOG_INFO, "Added audio to scene");
-	}
-
-
-	obs_set_output_source(0, obs_scene_get_source(scene));
-
-	// obs_set_output_source(0, scene);
-
 /*
 	obs_set_output_source(0, webcamSource);
 	obs_set_output_source(1, audioSource);
@@ -244,37 +218,13 @@ static int initialize(json_t* obj)
 	obs_encoder_set_audio(audioEncoder, obs_get_audio());
 	obs_output_set_video_encoder(fileOutput, encoder);
 	obs_output_set_audio_encoder(fileOutput, audioEncoder, 0);
+}
 
+static const list_audio_devices(json_t* returnObj)
+{
+	json_t *array = json_array();
+	json_object_set_new(returnObj,"devices", array);
 
-/*
-	blog(LOG_INFO, "Getting source properties");
-
-	obs_properties_t* webcamProps = obs_source_properties(webcamSource);
-	obs_property_t *property= obs_properties_first(webcamProps);
-
-	while (property!= NULL) {
-		const char *name = obs_property_name(property);
-		enum obs_property_type type = obs_property_get_type(property);
-		blog(LOG_INFO, "Property: %s, %d", name, type);
-
-		if (type == OBS_PROPERTY_LIST)
-		{
-			int numItems = obs_property_list_item_count(property);
-			blog(LOG_INFO,"%d items", numItems);
-			for (int i=0;i<numItems;i++)
-			{
-				blog(LOG_INFO,"List item name: %s", obs_property_list_item_name(property, i));
-				blog(LOG_INFO,"List item string value: %s", obs_property_list_item_string(property, i));
-				blog(LOG_INFO,"List item int value: %d", obs_property_list_item_int(property, i));
-				blog(LOG_INFO,"List item float value: %f", obs_property_list_item_float(property, i));
-			}
-		}
-
-		obs_property_next(&property);
-	}
-	*/
-
-	/*
 	obs_properties_t* audioProps = obs_source_properties(audioSource);
 	obs_property_t *property = obs_properties_first(audioProps);
 	while (property != NULL) {
@@ -282,12 +232,17 @@ static int initialize(json_t* obj)
 		enum obs_property_type type = obs_property_get_type(property);
 		blog(LOG_INFO, "Property: %s, %d", name, type);
 
-		if (type == OBS_PROPERTY_LIST)
+		if (strcmp(name,"device_id")==0)
 		{
 			int numItems = obs_property_list_item_count(property);
 			blog(LOG_INFO,"%d items", numItems);
 			for (int i=0;i<numItems;i++)
 			{
+				json_t *deviceObj = json_object();
+				json_object_set_new(deviceObj, "deviceName", json_string(obs_property_list_item_name(property, i)));
+				json_object_set_new(deviceObj, "deviceId", json_string(obs_property_list_item_string(property, i)));
+				json_array_append(array, deviceObj);
+
 				blog(LOG_INFO,"List item name: %s", obs_property_list_item_name(property, i));
 				blog(LOG_INFO,"List item string value: %s", obs_property_list_item_string(property, i));
 				blog(LOG_INFO,"List item int value: %d", obs_property_list_item_int(property, i));
@@ -297,8 +252,40 @@ static int initialize(json_t* obj)
 
 		obs_property_next(&property);
 	}
-	*/
+}
 
+static const list_webcam_devices(json_t* returnObj)
+{
+	json_t *array = json_array();
+	json_object_set_new(returnObj,"devices", array);
+
+	obs_properties_t* webcamProps = obs_source_properties(webcamSource);
+	obs_property_t *property = obs_properties_first(webcamProps);
+	while (property != NULL) {
+		const char *name = obs_property_name(property);
+		enum obs_property_type type = obs_property_get_type(property);
+		blog(LOG_INFO, "Property: %s, %d", name, type);
+
+		if (strcmp(name,"device")==0)
+		{
+			int numItems = obs_property_list_item_count(property);
+			blog(LOG_INFO,"%d items", numItems);
+			for (int i=0;i<numItems;i++)
+			{
+				json_t *deviceObj = json_object();
+				json_object_set_new(deviceObj, "deviceName", json_string(obs_property_list_item_name(property, i)));
+				json_object_set_new(deviceObj, "deviceId", json_string(obs_property_list_item_string(property, i)));
+				json_array_append(array, deviceObj);
+
+				blog(LOG_INFO,"List item name: %s", obs_property_list_item_name(property, i));
+				blog(LOG_INFO,"List item string value: %s", obs_property_list_item_string(property, i));
+				blog(LOG_INFO,"List item int value: %d", obs_property_list_item_int(property, i));
+				blog(LOG_INFO,"List item float value: %f", obs_property_list_item_float(property, i));
+			}
+		}
+
+		obs_property_next(&property);
+	}
 }
 
 static const json_t* parse_command(json_t* command)
@@ -355,6 +342,12 @@ static const json_t* parse_command(json_t* command)
 		fprintf(stderr, "Shutting down");
 		obs_set_output_source(0, NULL);
 		obs_shutdown();
+	} else if (strcmp(action, "listAudioInputDevices") == 0) {
+		fprintf(stderr, "Listing Audio Input Devices");
+		list_audio_devices(returnObj);
+	} else if (strcmp(action, "listWebcamDevices") == 0) {
+		fprintf(stderr, "Listing Webcam Devices");
+		list_webcam_devices(returnObj);
 	}
 
 	char* str = json_dumps(returnObj, JSON_INDENT(2));
