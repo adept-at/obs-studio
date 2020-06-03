@@ -20,6 +20,8 @@
 #include "left-right.hpp"
 #include "scope-guard.hpp"
 
+#include <jansson.h>
+
 #define NBSP "\xC2\xA0"
 
 using namespace std;
@@ -2091,6 +2093,38 @@ static obs_properties_t *av_capture_properties(void *capture)
 				obs_module_text("Buffering"));
 
 	return props;
+}
+
+static json_t *av_get_device_list(void* capture)
+{
+	json_t *array = json_array();
+
+	for (AVCaptureDevice *dev in [AVCaptureDevice devices]) {
+		if ([dev hasMediaType:AVMediaTypeVideo] ||
+		    [dev hasMediaType:AVMediaTypeMuxed]) {
+
+			json_t *obj = json_object();
+			json_array_append(array, obj);
+
+			json_object_set_new(obj, "deviceName", json_string(dev.localizedName.UTF8String));
+			json_object_set_new(obj, "deviceId", json_string(dev.uniqueID.UTF8String));
+
+			json_t *resolutionArray = json_array();
+			json_object_set_new(obj, "resolutions", resolutionArray);
+
+			vector<CMVideoDimensions> resolutions = enumerate_resolutions(dev);
+			for(CMVideoDimensions dim : resolutions) {
+				json_t *obj = json_object();
+
+				json_object_set_new(obj, "width", json_integer(dim.width));
+				json_object_set_new(obj, "height", json_integer(dim.height));
+
+				json_array_append(resolutionArray, obj);
+			}
+		}
+	}
+
+	return array;
 }
 
 static void switch_device(av_capture *capture, NSString *uid,

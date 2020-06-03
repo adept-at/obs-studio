@@ -269,6 +269,8 @@ struct obs_source_info {
 	 */
 	obs_properties_t *(*get_properties)(void *data);
 
+	json_t* (*get_device_list)(void *data);
+
 	/**
 	 * Updates the settings for this source
 	 *
@@ -488,7 +490,7 @@ struct obs_source_info {
 
 	/**
 	 * Gets the default settings for this source
-	 * 
+	 *
 	 * If get_defaults is also defined both will be called, and the first
 	 * call will be to get_defaults, then to get_defaults2.
 	 *

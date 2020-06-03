@@ -123,6 +123,7 @@ static int initialize(json_t* obj)
 	ovi.output_format = VIDEO_FORMAT_RGBA;
 	ovi.scale_type = OBS_SCALE_BILINEAR;
 
+/*
 	blog(LOG_INFO, "Resetting video");
 	int rc = obs_reset_video(&ovi);
 	blog(LOG_INFO, "Result: %d", rc);
@@ -134,6 +135,7 @@ static int initialize(json_t* obj)
 	ai.speakers = SPEAKERS_MONO;
 	obs_reset_audio(&ai);
 	blog(LOG_INFO, "Reset audio");
+*/
 
 	obs_add_module_path(pluginDir, pluginDir);
 
@@ -142,6 +144,7 @@ static int initialize(json_t* obj)
 	obs_post_load_modules();
 	blog(LOG_INFO, "Done loading modules");
 
+/*
 	obs_encoder_t *encoder = obs_video_encoder_create(
 		"obs_x264", "simple_h264_recording", NULL, NULL);
 	if (!encoder) {
@@ -158,6 +161,7 @@ static int initialize(json_t* obj)
 	}
 
 	blog(LOG_INFO, "Created audio encoder");
+*/
 
 	obs_data_t *displaySettings = obs_data_create();
 	obs_data_set_int(displaySettings, "display", displayNum);
@@ -174,9 +178,8 @@ static int initialize(json_t* obj)
 
 
 	obs_data_t *audioSettings = obs_data_create();
-	obs_data_set_string(audioSettings, "device_id", "AppleUSBAudioEngine:Sony Computer Entertainment:Wired USB Headset:14130000:1");
 
-	audioSource = obs_source_create("coreaudio_input_capture", "Microphone", audioSettings, NULL);
+	audioSource = obs_source_create("coreaudio_input_capture", "Microphone", NULL, NULL);
 	if (!audioSource) {
 		blog(LOG_ERROR, "Unable to create audio source");
 	} else {
@@ -198,6 +201,7 @@ static int initialize(json_t* obj)
 		blog(LOG_INFO, "created av capture!");
 	}
 
+/*
 	fileOutput = obs_output_create(
 		"ffmpeg_muxer", "simple_file_output", NULL, NULL);
 	if (!fileOutput) {
@@ -209,15 +213,14 @@ static int initialize(json_t* obj)
 	obs_data_set_string(settings, "path", outputFilePath);
 	obs_output_update(fileOutput, settings);
 
-/*
 	obs_set_output_source(0, webcamSource);
 	obs_set_output_source(1, audioSource);
-*/
 
 	obs_encoder_set_video(encoder, obs_get_video());
 	obs_encoder_set_audio(audioEncoder, obs_get_audio());
 	obs_output_set_video_encoder(fileOutput, encoder);
 	obs_output_set_audio_encoder(fileOutput, audioEncoder, 0);
+*/
 }
 
 static const list_audio_devices(json_t* returnObj)
@@ -254,38 +257,14 @@ static const list_audio_devices(json_t* returnObj)
 	}
 }
 
-static const list_webcam_devices(json_t* returnObj)
+static void list_webcam_devices(json_t* returnObj)
 {
-	json_t *array = json_array();
-	json_object_set_new(returnObj,"devices", array);
+	json_t *deviceList = obs_source_device_list(webcamSource);
 
-	obs_properties_t* webcamProps = obs_source_properties(webcamSource);
-	obs_property_t *property = obs_properties_first(webcamProps);
-	while (property != NULL) {
-		const char *name = obs_property_name(property);
-		enum obs_property_type type = obs_property_get_type(property);
-		blog(LOG_INFO, "Property: %s, %d", name, type);
+	fprintf(stderr,"Got devicelist");
+	fprintf(stderr, "Devices: %s", json_dumps(deviceList,0));
 
-		if (strcmp(name,"device")==0)
-		{
-			int numItems = obs_property_list_item_count(property);
-			blog(LOG_INFO,"%d items", numItems);
-			for (int i=0;i<numItems;i++)
-			{
-				json_t *deviceObj = json_object();
-				json_object_set_new(deviceObj, "deviceName", json_string(obs_property_list_item_name(property, i)));
-				json_object_set_new(deviceObj, "deviceId", json_string(obs_property_list_item_string(property, i)));
-				json_array_append(array, deviceObj);
-
-				blog(LOG_INFO,"List item name: %s", obs_property_list_item_name(property, i));
-				blog(LOG_INFO,"List item string value: %s", obs_property_list_item_string(property, i));
-				blog(LOG_INFO,"List item int value: %d", obs_property_list_item_int(property, i));
-				blog(LOG_INFO,"List item float value: %f", obs_property_list_item_float(property, i));
-			}
-		}
-
-		obs_property_next(&property);
-	}
+	json_object_set_new(returnObj, "devices", deviceList);
 }
 
 static const json_t* parse_command(json_t* command)
