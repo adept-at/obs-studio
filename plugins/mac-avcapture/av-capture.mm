@@ -2227,6 +2227,7 @@ bool obs_module_load(void)
 		.destroy = av_capture_destroy,
 		.get_defaults = av_capture_defaults,
 		.get_properties = av_capture_properties,
+		.get_device_list = av_get_device_list,
 		.update = av_capture_update,
 		.icon_type = OBS_ICON_TYPE_CAMERA,
 	};
