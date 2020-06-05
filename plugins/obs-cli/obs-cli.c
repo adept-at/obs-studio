@@ -23,11 +23,6 @@ static obs_source_t *webcamSource = NULL;
 static obs_encoder_t *encoder;
 static obs_encoder_t *audioEncoder;
 
-// 0 - none
-// 1 - display
-// 2 - webcam
-static int singleSourceType = 0;
-
 static void null_log_handler(int log_level, const char *format, va_list args,
 			     void *param)
 {
@@ -185,10 +180,9 @@ static int initializeSingleVideoRecording(json_t* obj)
 		obs_data_t *displaySettings = obs_data_create();
 		obs_data_set_int(displaySettings, "display", displayNum);
 		obs_source_update(displaySource, displaySettings);
+		obs_set_output_source(0, displaySource);
 
 		blog(LOG_INFO, "Set display to %d", displayNum);
-
-		singleSourceType = 1;
 	} else if (strcmp(deviceType, "webcam") == 0) {
 		blog(LOG_INFO, "initializing webcam");
 
@@ -202,9 +196,9 @@ static int initializeSingleVideoRecording(json_t* obj)
 		obs_data_set_string(settings, "device", deviceId);
 		obs_source_update(webcamSource, settings);
 
-		blog(LOG_INFO, "Set webcam to %s", deviceId);
+		obs_set_output_source(0, webcamSource);
 
-		singleSourceType = 2;
+		blog(LOG_INFO, "Set webcam to %s", deviceId);
 	} else {
 		blog(LOG_ERROR, "Unknown device type: %s", deviceType);
 		return 1;
@@ -265,14 +259,6 @@ static const int startRecording(json_t* command)
 	if (!fileOutput) {
 		blog(LOG_ERROR, "ERROR\n");
 		return 1;
-	}
-
-	if (singleSourceType == 1) {
-		obs_set_output_source(0, displaySource);
-		blog(LOG_INFO, "Set input source to monitor");
-	} else if (singleSourceType == 2) {
-		obs_set_output_source(0, webcamSource);
-		blog(LOG_INFO, "Set input source to webcam");
 	}
 
 	obs_set_output_source(1, audioSource);
