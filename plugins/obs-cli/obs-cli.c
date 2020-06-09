@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include "obs-cli.h"
 #include <jansson.h>
+#include "util/threading.h"
 
 #define OBSCLI_LOGFILE_ENV "OBSCLI_LOGFILE_ENV"
 
@@ -23,13 +24,37 @@ static obs_source_t *webcamSource = NULL;
 static obs_encoder_t *encoder;
 static obs_encoder_t *audioEncoder;
 
+// We write to stdout when we get certain events from
+// obs and callbacks are not threadsafe, so we coordinate writes.
+static pthread_mutex_t stdout_mutex;
+
 static void null_log_handler(int log_level, const char *format, va_list args,
 			     void *param)
 {
 }
 
-static int initialize(json_t* obj)
+static void output_stopped(void *my_data, calldata_t *cd)
 {
+	obs_output_t *output = calldata_ptr(cd, "output");
+	char* actionId = (char*) my_data;
+
+	pthread_mutex_lock(&stdout_mutex);
+	fprintf(stderr, "STOPPED!!!!");
+	fprintf(stdout, "\n{ \"actionId\": \"%s\"}\n", actionId);
+	fflush(stdout);
+	pthread_mutex_unlock(&stdout_mutex);
+
+	bfree(my_data);
+}
+
+static int initialize(json_t *obj)
+{
+	if (pthread_mutex_init(&stdout_mutex, NULL) != 0)
+	{
+        fprintf(stderr, "error initializing stdout mutex");
+		return 0;
+	}
+
 	blog(LOG_INFO, "Starting OBS!");
 
 	json_t* pluginDirObj = json_object_get(obj, "pluginDir");
@@ -447,7 +472,14 @@ static const json_t* parse_command(json_t* command)
 		}
 	} else if (strcmp(action, "stopRecording") == 0) {
 		fprintf(stderr, "Stopping recording");
+
+		signal_handler_t *handler = obs_output_get_signal_handler(fileOutput);
+		signal_handler_connect(handler, "stop", output_stopped, bstrdup(actionId));
+
 		obs_output_stop(fileOutput);
+
+		// let the stop callback actually return the output
+		return NULL;
 	} else if (strcmp(action, "shutdown") == 0) {
 		fprintf(stderr, "Shutting down");
 		obs_set_output_source(0, NULL);
@@ -505,21 +537,26 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
-		char* str = json_dumps(root, JSON_INDENT(2));
+		char *str = json_dumps(root, JSON_INDENT(2));
 		if (str) {
 			fprintf(stderr, "Read in JSON: %s", str);
-			const json_t* returnObj = parse_command(root);
-			char* returnStr = json_dumps(returnObj, 0);
+			const json_t *returnObj = parse_command(root);
 
-			// Write newline at the beginning in case someone printed some garbage to stdout
-			fprintf(stderr, "Returning: %s\n", returnStr);
-			fprintf(stdout, "\n%s\n", returnStr);
-			fflush(stdout);
+			if (returnObj != NULL) {
+				char *returnStr = json_dumps(returnObj, 0);
 
-			// Free up all
-			free(returnStr);
-			free(str);
-			free(returnObj);
+				// Write newline at the beginning in case someone printed some garbage to stdout
+				pthread_mutex_lock(&stdout_mutex);
+				fprintf(stderr, "Returning: %s\n", returnStr);
+				fprintf(stdout, "\n%s\n", returnStr);
+				fflush(stdout);
+				pthread_mutex_unlock(&stdout_mutex);
+
+				// Free up all
+				free(returnStr);
+				free(str);
+				free(returnObj);
+			}
 		}
 	}
 
