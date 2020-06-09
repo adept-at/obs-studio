@@ -8,6 +8,8 @@
 
 #include "window-utils.h"
 
+#include <jansson.h>
+
 enum crop_mode {
 	CROP_NONE,
 	CROP_MANUAL,
@@ -639,6 +641,24 @@ static obs_properties_t *display_capture_properties(void *unused)
 	return props;
 }
 
+static json_t *av_get_device_list(void* capture)
+{
+	json_t *array = json_array();
+
+	for (NSScreen *screen in [NSScreen screens]) {
+		json_t *obj = json_object();
+		json_array_append(array, obj);
+
+		const CGDirectDisplayID display_id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] unsignedIntValue];
+
+		blog(LOG_INFO, "DisplayID: %u", display_id);
+
+		json_object_set_new(obj, "deviceId", json_integer(display_id));
+	}
+
+	return array;
+}
+
 struct obs_source_info display_capture_info = {
 	.id = "display_capture",
 	.type = OBS_SOURCE_TYPE_INPUT,
@@ -657,6 +677,7 @@ struct obs_source_info display_capture_info = {
 
 	.get_defaults = display_capture_defaults,
 	.get_properties = display_capture_properties,
+	.get_device_list = av_get_device_list,
 	.update = display_capture_update,
 	.icon_type = OBS_ICON_TYPE_DESKTOP_CAPTURE,
 };

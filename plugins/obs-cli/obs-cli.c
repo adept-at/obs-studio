@@ -165,6 +165,32 @@ static int initializeSingleVideoRecording(json_t* obj)
     }
 	const char* deviceType = json_string_value(deviceTypeObj);
 
+	int cropLeft = 0;
+	int cropRight = 0;
+	int cropTop = 0;
+	int cropBottom = 0;
+
+	json_t* cropLeftObj = json_object_get(obj, "cropLeft");
+	if (cropLeftObj)
+	{
+		cropLeft = json_integer_value(cropLeftObj);
+	}
+	json_t* cropRightObj = json_object_get(obj, "cropRight");
+	if (cropRightObj)
+	{
+		cropRight = json_integer_value(cropRightObj);
+	}
+	json_t* cropTopObj = json_object_get(obj, "cropTop");
+	if (cropTopObj)
+	{
+		cropTop = json_integer_value(cropTopObj);
+	}
+	json_t* cropBottomObj = json_object_get(obj, "cropBottom");
+	if (cropBottomObj)
+	{
+		cropBottom = json_integer_value(cropBottomObj);
+	}
+
 	blog(LOG_INFO,"Device type: %s", deviceType);
 
 	if (strcmp(deviceType, "monitor") == 0) {
@@ -179,6 +205,19 @@ static int initializeSingleVideoRecording(json_t* obj)
 
 		obs_data_t *displaySettings = obs_data_create();
 		obs_data_set_int(displaySettings, "display", displayNum);
+
+		if (cropLeft!=0 || cropRight!=0 || cropTop != 0 || cropBottom != 0)
+		{
+			obs_data_set_int(displaySettings, "crop_mode", 1);
+			obs_data_set_double(displaySettings, "manual.origin.x", cropLeft);
+			obs_data_set_double(displaySettings, "manual.origin.y", cropTop);
+
+			// These settings are a little misnamed - it actually treats them
+			// like corpping the right and bottom instead of width and height
+			obs_data_set_double(displaySettings, "manual.size.width", cropRight);
+			obs_data_set_double(displaySettings, "manual.size.height", cropBottom);
+		}
+
 		obs_source_update(displaySource, displaySettings);
 		obs_set_output_source(0, displaySource);
 
@@ -337,6 +376,16 @@ static void list_webcam_devices(json_t* returnObj)
 	json_object_set_new(returnObj, "devices", deviceList);
 }
 
+static void list_display_devices(json_t* returnObj)
+{
+	json_t *deviceList = obs_source_device_list(displaySource);
+
+	fprintf(stderr,"Got devicelist");
+	fprintf(stderr, "Devices: %s", json_dumps(deviceList,0));
+
+	json_object_set_new(returnObj, "devices", deviceList);
+}
+
 static const json_t* parse_command(json_t* command)
 {
 	json_t* returnObj = json_object();
@@ -405,6 +454,9 @@ static const json_t* parse_command(json_t* command)
 	} else if (strcmp(action, "listWebcamDevices") == 0) {
 		fprintf(stderr, "Listing Webcam Devices");
 		list_webcam_devices(returnObj);
+	} else if (strcmp(action, "listDisplays") == 0) {
+		fprintf(stderr, "Listing Display Devices");
+		list_display_devices(returnObj);
 	}
 
 	char* str = json_dumps(returnObj, JSON_INDENT(2));
