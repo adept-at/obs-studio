@@ -217,6 +217,10 @@ static int initializeSingleVideoRecording(json_t* obj)
 			obs_data_set_double(displaySettings, "manual.size.width", cropRight);
 			obs_data_set_double(displaySettings, "manual.size.height", cropBottom);
 		}
+		else
+		{
+			obs_data_set_int(displaySettings, "crop_mode", 0);
+		}
 
 		obs_source_update(displaySource, displaySettings);
 		obs_set_output_source(0, displaySource);
