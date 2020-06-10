@@ -2112,14 +2112,33 @@ static json_t *av_get_device_list(void* capture)
 			json_t *resolutionArray = json_array();
 			json_object_set_new(obj, "resolutions", resolutionArray);
 
-			vector<CMVideoDimensions> resolutions = enumerate_resolutions(dev);
-			for(CMVideoDimensions dim : resolutions) {
-				json_t *obj = json_object();
-
-				json_object_set_new(obj, "width", json_integer(dim.width));
-				json_object_set_new(obj, "height", json_integer(dim.height));
-
-				json_array_append(resolutionArray, obj);
+			for (NSString *preset in presets())
+			{
+				if([dev supportsAVCaptureSessionPreset:preset])
+				{
+					json_t *obj = json_object();
+					json_array_append(resolutionArray, obj);
+					if (preset == AVCaptureSessionPreset1280x720)
+					{
+						json_object_set_new(obj, "width", json_integer(1280));
+						json_object_set_new(obj, "height", json_integer(720));
+					}
+					else if (preset == AVCaptureSessionPreset640x480)
+					{
+						json_object_set_new(obj, "width", json_integer(640));
+						json_object_set_new(obj, "height", json_integer(480));
+					}
+					else if (preset == AVCaptureSessionPreset352x288)
+					{
+						json_object_set_new(obj, "width", json_integer(352));
+						json_object_set_new(obj, "height", json_integer(288));
+					}
+					else if (preset == AVCaptureSessionPreset320x240)
+					{
+						json_object_set_new(obj, "width", json_integer(320));
+						json_object_set_new(obj, "height", json_integer(240));
+					}
+				}
 			}
 		}
 	}
