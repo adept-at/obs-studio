@@ -68,6 +68,9 @@ typedef struct obs_weak_output obs_weak_output_t;
 typedef struct obs_weak_encoder obs_weak_encoder_t;
 typedef struct obs_weak_service obs_weak_service_t;
 
+struct json_t;
+typedef struct json_t json_t;
+
 #include "obs-source.h"
 #include "obs-encoder.h"
 #include "obs-output.h"
@@ -892,6 +895,8 @@ EXPORT obs_data_t *obs_get_source_defaults(const char *id);
 /** Returns the property list, if any.  Free with obs_properties_destroy */
 EXPORT obs_properties_t *obs_get_source_properties(const char *id);
 
+EXPORT json_t *obs_source_get_device_list(const char *id);
+
 /** Returns whether the source has custom properties or not */
 EXPORT bool obs_is_source_configurable(const char *id);
 
@@ -902,6 +907,11 @@ EXPORT bool obs_source_configurable(const obs_source_t *source);
  * obs_properties_destroy
  */
 EXPORT obs_properties_t *obs_source_properties(const obs_source_t *source);
+
+/**
+ * Returns the json props for all devices
+ */
+EXPORT json_t *obs_source_device_list(const obs_source_t *source);
 
 /** Updates settings for this source */
 EXPORT void obs_source_update(obs_source_t *source, obs_data_t *settings);

@@ -13,7 +13,8 @@ include_directories(${AVFOUNDATION}
                     ${COREFOUNDATION}
                     ${COREMEDIA}
                     ${COREVIDEO}
-                    ${COREMEDIAIO}
+					${COREMEDIAIO}
+					${JANSSON_INCLUDE_DIRS}
 		    ${COCOA})
 
 set(mac-avcapture_HEADERS

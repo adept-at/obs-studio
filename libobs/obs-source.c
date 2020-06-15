@@ -822,6 +822,14 @@ bool obs_source_configurable(const obs_source_t *source)
 	       (source->info.get_properties || source->info.get_properties2);
 }
 
+json_t *obs_source_device_list(const obs_source_t *source)
+{
+	if (!data_valid(source, "obs_source_device_list"))
+		return NULL;
+
+	return source->info.get_device_list(source->context.data);
+}
+
 obs_properties_t *obs_source_properties(const obs_source_t *source)
 {
 	blog(LOG_INFO, "In obs_source_properties");

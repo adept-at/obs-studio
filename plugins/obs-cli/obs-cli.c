@@ -12,18 +12,49 @@
 #include <unistd.h>
 #include "obs-cli.h"
 #include <jansson.h>
+#include "util/threading.h"
 
 #define OBSCLI_LOGFILE_ENV "OBSCLI_LOGFILE_ENV"
 
 static obs_output_t *fileOutput = NULL;
+static obs_source_t *audioSource = NULL;
+static obs_source_t *displaySource = NULL;
+static obs_source_t *webcamSource = NULL;
+
+static obs_encoder_t *encoder;
+static obs_encoder_t *audioEncoder;
+
+// We write to stdout when we get certain events from
+// obs and callbacks are not threadsafe, so we coordinate writes.
+static pthread_mutex_t stdout_mutex;
 
 static void null_log_handler(int log_level, const char *format, va_list args,
 			     void *param)
 {
 }
 
-static int initialize(json_t* obj)
+static void output_stopped(void *my_data, calldata_t *cd)
 {
+	obs_output_t *output = calldata_ptr(cd, "output");
+	char* actionId = (char*) my_data;
+
+	pthread_mutex_lock(&stdout_mutex);
+	fprintf(stderr, "STOPPED!!!!");
+	fprintf(stdout, "\n{ \"actionId\": \"%s\"}\n", actionId);
+	fflush(stdout);
+	pthread_mutex_unlock(&stdout_mutex);
+
+	bfree(my_data);
+}
+
+static int initialize(json_t *obj)
+{
+	if (pthread_mutex_init(&stdout_mutex, NULL) != 0)
+	{
+        fprintf(stderr, "error initializing stdout mutex");
+		return 0;
+	}
+
 	blog(LOG_INFO, "Starting OBS!");
 
 	json_t* pluginDirObj = json_object_get(obj, "pluginDir");
@@ -52,27 +83,78 @@ static int initialize(json_t* obj)
 	const char* dataDir= json_string_value(dataDirObj);
 	obs_add_data_path(dataDir);
 
-	json_t* outputFileObj = json_object_get(obj, "outputFile");
-	if(!json_is_string(outputFileObj))
-    {
-        fprintf(stderr, "error: outputFileObj is not a string\n");
-        return 0;
-    }
-	const char* outputFilePath = json_string_value(outputFileObj);
+	if (!obs_startup("en", ".", NULL)) {
+		blog(LOG_ERROR, "Failed to start");
+		return 1;
+	} else {
+		blog(LOG_INFO, "Started OBS");
+	}
 
-	json_t* displayNumObj = json_object_get(obj, "displayNum");
-	if(!json_is_integer(displayNumObj))
-    {
-        fprintf(stderr, "error: displayNum is not an integer\n");
-        return 0;
-    }
-	int displayNum = json_integer_value(displayNumObj);
+
+	struct obs_video_info ovi;
+	ovi.adapter = 0;
+	ovi.gpu_conversion = false;
+	ovi.graphics_module = "libobs-opengl";
+	ovi.fps_num = 30000;
+	ovi.fps_den = 1000;
+	ovi.base_width = 1280;
+	ovi.base_height = 720;
+	ovi.output_width = 1280;
+	ovi.output_height = 720;
+	ovi.output_format = VIDEO_FORMAT_RGBA;
+	ovi.scale_type = OBS_SCALE_BILINEAR;
+
+	blog(LOG_INFO, "Resetting video");
+	int rc = obs_reset_video(&ovi);
+	blog(LOG_INFO, "Result: %d", rc);
+
+	struct obs_audio_info ai;
+	ai.samples_per_sec = 44100;
+	ai.speakers = SPEAKERS_MONO;
+	rc = obs_reset_audio(&ai);
+	blog(LOG_INFO, "Reset audio: %d", rc);
+
+	obs_add_module_path(pluginDir, pluginDir);
+	blog(LOG_INFO, "Loading modules");
+	obs_load_all_modules();
+	obs_post_load_modules();
+	blog(LOG_INFO, "Done loading modules");
+
+	displaySource = obs_source_create("display_capture", "Display Capture", NULL, NULL);
+	if (!displaySource) {
+		blog(LOG_ERROR, "Unable to create source");
+		return 1;
+	} else {
+		blog(LOG_INFO, "Created display capture!");
+	}
+
+	audioSource = obs_source_create("coreaudio_input_capture", "Microphone", NULL, NULL);
+	if (!audioSource) {
+		blog(LOG_ERROR, "Unable to create audio source");
+	} else {
+		blog(LOG_INFO, "Created audio source");
+	}
+
+	webcamSource = obs_source_create("av_capture_input", "Webcam Capture", NULL, NULL);
+	if (!webcamSource) {
+		blog(LOG_ERROR, "Unable to create webcam source");
+	} else {
+		blog(LOG_INFO, "created av capture!");
+	}
+
+	return 0;
+}
+
+// Set up video for recording a single source to the output
+static int initializeSingleVideoRecording(json_t* obj)
+{
+	blog(LOG_INFO, "In initializeSingleVideoRecording");
 
 	json_t* inputWidthObj = json_object_get(obj, "inputWidth");
 	if(!json_is_integer(inputWidthObj))
     {
         fprintf(stderr, "error: inputWidth is not an integer\n");
-        return 0;
+        return 1;
     }
 	int inputWidth = json_integer_value(inputWidthObj);
 
@@ -80,7 +162,7 @@ static int initialize(json_t* obj)
 	if(!json_is_integer(inputHeightObj))
     {
         fprintf(stderr, "error: inputHeight is not an integer\n");
-        return 0;
+        return 1;
     }
 	int inputHeight = json_integer_value(inputHeightObj);
 
@@ -88,7 +170,7 @@ static int initialize(json_t* obj)
 	if(!json_is_integer(outputWidthObj))
     {
         fprintf(stderr, "error: outputWidth is not an integer\n");
-        return 0;
+        return 1;
     }
 	int outputWidth = json_integer_value(outputWidthObj);
 
@@ -96,15 +178,98 @@ static int initialize(json_t* obj)
 	if(!json_is_integer(outputHeightObj))
     {
         fprintf(stderr, "error: outputHeight is not an integer\n");
-        return 0;
+        return 1;
     }
 	int outputHeight = json_integer_value(outputHeightObj);
 
-	if (!obs_startup("en", ".", NULL)) {
-		blog(LOG_ERROR, "Failed to start");
-		return 1;
+	json_t* deviceTypeObj = json_object_get(obj, "deviceType");
+	if(!json_is_string(deviceTypeObj))
+    {
+        fprintf(stderr, "error: deviceTypeObj is not a string\n");
+        return 1;
+    }
+	const char* deviceType = json_string_value(deviceTypeObj);
+
+	int cropLeft = 0;
+	int cropRight = 0;
+	int cropTop = 0;
+	int cropBottom = 0;
+
+	json_t* cropLeftObj = json_object_get(obj, "cropLeft");
+	if (cropLeftObj)
+	{
+		cropLeft = json_integer_value(cropLeftObj);
+	}
+	json_t* cropRightObj = json_object_get(obj, "cropRight");
+	if (cropRightObj)
+	{
+		cropRight = json_integer_value(cropRightObj);
+	}
+	json_t* cropTopObj = json_object_get(obj, "cropTop");
+	if (cropTopObj)
+	{
+		cropTop = json_integer_value(cropTopObj);
+	}
+	json_t* cropBottomObj = json_object_get(obj, "cropBottom");
+	if (cropBottomObj)
+	{
+		cropBottom = json_integer_value(cropBottomObj);
+	}
+
+	blog(LOG_INFO,"Device type: %s", deviceType);
+
+	if (strcmp(deviceType, "monitor") == 0) {
+		blog(LOG_INFO, "initializing monitor");
+		json_t *displayNumObj = json_object_get(obj, "displayNum");
+		if (!json_is_integer(displayNumObj)) {
+			fprintf(stderr,
+				"error: displayNum is not an integer\n");
+			return 1;
+		}
+		int displayNum = json_integer_value(displayNumObj);
+
+		obs_data_t *displaySettings = obs_data_create();
+		obs_data_set_int(displaySettings, "display", displayNum);
+
+		if (cropLeft!=0 || cropRight!=0 || cropTop != 0 || cropBottom != 0)
+		{
+			obs_data_set_int(displaySettings, "crop_mode", 1);
+			obs_data_set_double(displaySettings, "manual.origin.x", cropLeft);
+			obs_data_set_double(displaySettings, "manual.origin.y", cropTop);
+
+			// These settings are a little misnamed - it actually treats them
+			// like corpping the right and bottom instead of width and height
+			obs_data_set_double(displaySettings, "manual.size.width", cropRight);
+			obs_data_set_double(displaySettings, "manual.size.height", cropBottom);
+		}
+		else
+		{
+			obs_data_set_int(displaySettings, "crop_mode", 0);
+		}
+
+		obs_source_update(displaySource, displaySettings);
+		obs_set_output_source(0, displaySource);
+
+		blog(LOG_INFO, "Set display to %d", displayNum);
+	} else if (strcmp(deviceType, "webcam") == 0) {
+		blog(LOG_INFO, "initializing webcam");
+
+		json_t *deviceIdObj = json_object_get(obj, "deviceId");
+		if (!json_is_string(deviceIdObj)) {
+			fprintf(stderr, "error: deviceIdObj is not a string\n");
+			return 0;
+		}
+		const char *deviceId = json_string_value(deviceIdObj);
+		obs_data_t *settings = obs_data_create();
+		obs_data_set_string(settings, "device", deviceId);
+		obs_source_update(webcamSource, settings);
+
+		obs_set_output_source(0, webcamSource);
+
+		blog(LOG_INFO, "Set webcam to %s", deviceId);
 	} else {
-		blog(LOG_INFO, "Started OBS");
+		blog(LOG_ERROR, "Unknown device type: %s", deviceType);
+		return 1;
 	}
 
 	struct obs_video_info ovi;
@@ -124,157 +289,83 @@ static int initialize(json_t* obj)
 	int rc = obs_reset_video(&ovi);
 	blog(LOG_INFO, "Result: %d", rc);
 
-	blog(LOG_INFO, "Reset video");
+	return 0;
+}
 
-	struct obs_audio_info ai;
-	ai.samples_per_sec = 44100;
-	ai.speakers = SPEAKERS_MONO;
-	obs_reset_audio(&ai);
-	blog(LOG_INFO, "Reset audio");
-
-	obs_add_module_path(pluginDir, pluginDir);
-
-	blog(LOG_INFO, "Loading modules");
-	obs_load_all_modules();
-	obs_post_load_modules();
-	blog(LOG_INFO, "Done loading modules");
-
-	obs_encoder_t *encoder = obs_video_encoder_create(
-		"obs_x264", "simple_h264_recording", NULL, NULL);
-	if (!encoder) {
-		blog(LOG_ERROR, "ERROR MAKING ENCODER");
-		return 1;
+static const int initializeAudio(json_t *command)
+{
+	json_t *deviceIdObj = json_object_get(command, "deviceId");
+	if (!json_is_string(deviceIdObj)) {
+		fprintf(stderr, "error: deviceIdObj is not a string\n");
+		return 0;
 	}
+	const char *deviceId = json_string_value(deviceIdObj);
 
-	blog(LOG_INFO, "Created encoder\n");
+	obs_data_t *settings = obs_data_create();
+	obs_data_set_string(settings, "device_id", deviceId);
+	obs_source_update(audioSource, settings);
 
-	obs_encoder_t *audioEncoder = obs_audio_encoder_create(
-		"CoreAudio_AAC", "simple_aac_recording", NULL, 0, NULL);
-	if (!audioEncoder) {
-		blog(LOG_ERROR, "ERROR MAKING ENCODER");
-	}
+	blog(LOG_INFO, "Set audio to %s", deviceId);
 
-	blog(LOG_INFO, "Created audio encoder");
+	return 0;
+}
 
-	obs_data_t *displaySettings = obs_data_create();
-	obs_data_set_int(displaySettings, "display", displayNum);
+static const int startRecording(json_t* command)
+{
+	json_t* outputFileObj = json_object_get(command, "outputFile");
+	if(!json_is_string(outputFileObj))
+    {
+        fprintf(stderr, "error: outputFileObj is not a string\n");
+        return 1;
+    }
+	const char* outputFilePath = json_string_value(outputFileObj);
 
-	blog(LOG_INFO, "Set display to %d", displayNum);
-
-	obs_source_t *source = obs_source_create("display_capture", "Display Capture", displaySettings, NULL);
-	if (!source) {
-		blog(LOG_ERROR, "Unable to create source");
-		return 1;
-	} else {
-		blog(LOG_INFO, "Created display capture!");
-	}
-
-
-	obs_data_t *audioSettings = obs_data_create();
-	obs_data_set_string(audioSettings, "device_id", "AppleUSBAudioEngine:Sony Computer Entertainment:Wired USB Headset:14130000:1");
-
-	obs_source_t *audioSource = obs_source_create("coreaudio_input_capture", "Microphone", audioSettings, NULL);
-	if (!audioSource) {
-		blog(LOG_ERROR, "Unable to create audio source");
-		return 1;
-	} else {
-		blog(LOG_INFO, "Created audio source");
-	}
-
-
-	obs_data_t *avSettings = obs_data_create();
-	obs_data_set_string(avSettings, "device", "0x1420000005ac8600");
-
-	obs_source_t *webcamSource = obs_source_create("av_capture_input", "Webcam Capture", avSettings, NULL);
-
-	if (!webcamSource) {
-		blog(LOG_ERROR, "Unable to create webcam source");
-		return 1;
-	} else {
-		blog(LOG_INFO, "created av capture!");
-	}
-
+	obs_data_t *settings = obs_data_create();
+	obs_data_set_string(settings, "path", outputFilePath);
 	fileOutput = obs_output_create(
-		"ffmpeg_muxer", "simple_file_output", NULL, NULL);
+		"ffmpeg_muxer", "simple_file_output", settings, NULL);
 	if (!fileOutput) {
 		blog(LOG_ERROR, "ERROR\n");
 		return 1;
 	}
 
-	obs_data_t *settings = obs_data_create();
-	obs_data_set_string(settings, "path", outputFilePath);
-	obs_output_update(fileOutput, settings);
-
-	obs_scene_t *scene = obs_scene_create("Test");
-
-	struct obs_scene_item *item;
-
-	item = obs_scene_add(scene, source);
-	if (item == NULL) {
-		blog(LOG_ERROR, "Could not add scene item");
-	} else {
-		blog(LOG_INFO, "Added video to scene");
-	}
-
-	item = obs_scene_add(scene, webcamSource);
-	if (item == NULL) {
-		blog(LOG_ERROR, "Could not add scene item");
-	} else {
-		blog(LOG_INFO, "Added webcam to scene");
-	}
-
-	item = obs_scene_add(scene, audioSource);
-	if (item == NULL) {
-		blog(LOG_ERROR, "Could not add scene item");
-	} else {
-		blog(LOG_INFO, "Added audio to scene");
-	}
-
-
-	obs_set_output_source(0, obs_scene_get_source(scene));
-
-	// obs_set_output_source(0, scene);
-
-/*
-	obs_set_output_source(0, webcamSource);
 	obs_set_output_source(1, audioSource);
-*/
+
+	encoder = obs_video_encoder_create(
+		"obs_x264", "simple_h264_recording", NULL, NULL);
+	if (!encoder) {
+		blog(LOG_ERROR, "ERROR MAKING ENCODER");
+		return 1;
+	}
+	blog(LOG_INFO, "Created encoder\n");
+
+	audioEncoder = obs_audio_encoder_create(
+		"CoreAudio_AAC", "simple_aac_recording", NULL, 0, NULL);
+	if (!audioEncoder) {
+		blog(LOG_ERROR, "ERROR MAKING ENCODER");
+	}
+	blog(LOG_INFO, "Created audio encoder");
 
 	obs_encoder_set_video(encoder, obs_get_video());
 	obs_encoder_set_audio(audioEncoder, obs_get_audio());
 	obs_output_set_video_encoder(fileOutput, encoder);
 	obs_output_set_audio_encoder(fileOutput, audioEncoder, 0);
 
-
-/*
-	blog(LOG_INFO, "Getting source properties");
-
-	obs_properties_t* webcamProps = obs_source_properties(webcamSource);
-	obs_property_t *property= obs_properties_first(webcamProps);
-
-	while (property!= NULL) {
-		const char *name = obs_property_name(property);
-		enum obs_property_type type = obs_property_get_type(property);
-		blog(LOG_INFO, "Property: %s, %d", name, type);
-
-		if (type == OBS_PROPERTY_LIST)
-		{
-			int numItems = obs_property_list_item_count(property);
-			blog(LOG_INFO,"%d items", numItems);
-			for (int i=0;i<numItems;i++)
-			{
-				blog(LOG_INFO,"List item name: %s", obs_property_list_item_name(property, i));
-				blog(LOG_INFO,"List item string value: %s", obs_property_list_item_string(property, i));
-				blog(LOG_INFO,"List item int value: %d", obs_property_list_item_int(property, i));
-				blog(LOG_INFO,"List item float value: %f", obs_property_list_item_float(property, i));
-			}
-		}
-
-		obs_property_next(&property);
+	blog(LOG_INFO, "Starting to record");
+	if (!obs_output_start(fileOutput)) {
+		fprintf(stderr, "Failed to start recording");
+		return 1;
 	}
-	*/
 
-	/*
+	return 0;
+}
+
+
+static const list_audio_devices(json_t* returnObj)
+{
+	json_t *array = json_array();
+	json_object_set_new(returnObj,"devices", array);
+
 	obs_properties_t* audioProps = obs_source_properties(audioSource);
 	obs_property_t *property = obs_properties_first(audioProps);
 	while (property != NULL) {
@@ -282,12 +373,17 @@ static int initialize(json_t* obj)
 		enum obs_property_type type = obs_property_get_type(property);
 		blog(LOG_INFO, "Property: %s, %d", name, type);
 
-		if (type == OBS_PROPERTY_LIST)
+		if (strcmp(name,"device_id")==0)
 		{
 			int numItems = obs_property_list_item_count(property);
 			blog(LOG_INFO,"%d items", numItems);
 			for (int i=0;i<numItems;i++)
 			{
+				json_t *deviceObj = json_object();
+				json_object_set_new(deviceObj, "deviceName", json_string(obs_property_list_item_name(property, i)));
+				json_object_set_new(deviceObj, "deviceId", json_string(obs_property_list_item_string(property, i)));
+				json_array_append(array, deviceObj);
+
 				blog(LOG_INFO,"List item name: %s", obs_property_list_item_name(property, i));
 				blog(LOG_INFO,"List item string value: %s", obs_property_list_item_string(property, i));
 				blog(LOG_INFO,"List item int value: %d", obs_property_list_item_int(property, i));
@@ -297,8 +393,26 @@ static int initialize(json_t* obj)
 
 		obs_property_next(&property);
 	}
-	*/
+}
 
+static void list_webcam_devices(json_t* returnObj)
+{
+	json_t *deviceList = obs_source_device_list(webcamSource);
+
+	fprintf(stderr,"Got devicelist");
+	fprintf(stderr, "Devices: %s", json_dumps(deviceList,0));
+
+	json_object_set_new(returnObj, "devices", deviceList);
+}
+
+static void list_display_devices(json_t* returnObj)
+{
+	json_t *deviceList = obs_source_device_list(displaySource);
+
+	fprintf(stderr,"Got devicelist");
+	fprintf(stderr, "Devices: %s", json_dumps(deviceList,0));
+
+	json_object_set_new(returnObj, "devices", deviceList);
 }
 
 static const json_t* parse_command(json_t* command)
@@ -330,14 +444,22 @@ static const json_t* parse_command(json_t* command)
 
 	if (strcmp(action, "initialize") == 0) {
 		fprintf(stderr, "Initializing");
-		if (!initialize(command)) {
+		if (initialize(command)!=0) {
 			fprintf(stderr, "Failed to initialize");
+		}
+	} else if (strcmp(action, "initializeSingleVideoRecording") == 0) {
+		fprintf(stderr, "initSingleVideoRecording");
+		if (initializeSingleVideoRecording(command)!=0) {
+			fprintf(stderr, "Failed to initialize video");
+		}
+	} else if (strcmp(action, "initializeAudio") == 0) {
+		fprintf(stderr, "initAudio");
+		if (initializeAudio(command)!=0) {
+			fprintf(stderr, "Failed to initialize audio");
 		}
 	} else if (strcmp(action, "startRecording") == 0) {
 		fprintf(stderr, "Starting recording");
-		if (!obs_output_start(fileOutput)) {
-			fprintf(stderr, "Failed to start recording");
-		}
+		startRecording(command);
 	} else if (strcmp(action, "pauseRecording") == 0) {
 		fprintf(stderr, "Pausing recording");
 		if (!obs_output_pause(fileOutput, true)) {
@@ -350,15 +472,30 @@ static const json_t* parse_command(json_t* command)
 		}
 	} else if (strcmp(action, "stopRecording") == 0) {
 		fprintf(stderr, "Stopping recording");
+
+		signal_handler_t *handler = obs_output_get_signal_handler(fileOutput);
+		signal_handler_connect(handler, "stop", output_stopped, bstrdup(actionId));
+
 		obs_output_stop(fileOutput);
+
+		// let the stop callback actually return the output
+		return NULL;
 	} else if (strcmp(action, "shutdown") == 0) {
 		fprintf(stderr, "Shutting down");
 		obs_set_output_source(0, NULL);
 		obs_shutdown();
+	} else if (strcmp(action, "listAudioInputDevices") == 0) {
+		fprintf(stderr, "Listing Audio Input Devices");
+		list_audio_devices(returnObj);
+	} else if (strcmp(action, "listWebcamDevices") == 0) {
+		fprintf(stderr, "Listing Webcam Devices");
+		list_webcam_devices(returnObj);
+	} else if (strcmp(action, "listDisplays") == 0) {
+		fprintf(stderr, "Listing Display Devices");
+		list_display_devices(returnObj);
 	}
 
 	char* str = json_dumps(returnObj, JSON_INDENT(2));
-	fprintf(stderr, "RETURNOBJ: %s", str);
 
 	return returnObj;
 }
@@ -400,20 +537,26 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
-		char* str = json_dumps(root, JSON_INDENT(2));
+		char *str = json_dumps(root, JSON_INDENT(2));
 		if (str) {
 			fprintf(stderr, "Read in JSON: %s", str);
-			const json_t* returnObj = parse_command(root);
-			char* returnStr = json_dumps(returnObj, 0);
+			const json_t *returnObj = parse_command(root);
 
-			// Write newline at the beginning in case someone printed some garbage to stdout
-			fprintf(stderr, "Returning: %s\n", returnStr);
-			fprintf(stdout, "\n%s\n", returnStr);
-			fflush(stdout);
+			if (returnObj != NULL) {
+				char *returnStr = json_dumps(returnObj, 0);
 
-			free(returnStr);
-			free(str);
-			free(returnObj);
+				// Write newline at the beginning in case someone printed some garbage to stdout
+				pthread_mutex_lock(&stdout_mutex);
+				fprintf(stderr, "Returning: %s\n", returnStr);
+				fprintf(stdout, "\n%s\n", returnStr);
+				fflush(stdout);
+				pthread_mutex_unlock(&stdout_mutex);
+
+				// Free up all
+				free(returnStr);
+				free(str);
+				free(returnObj);
+			}
 		}
 	}
 

@@ -20,6 +20,8 @@
 #include "left-right.hpp"
 #include "scope-guard.hpp"
 
+#include <jansson.h>
+
 #define NBSP "\xC2\xA0"
 
 using namespace std;
@@ -2093,6 +2095,57 @@ static obs_properties_t *av_capture_properties(void *capture)
 	return props;
 }
 
+static json_t *av_get_device_list(void* capture)
+{
+	json_t *array = json_array();
+
+	for (AVCaptureDevice *dev in [AVCaptureDevice devices]) {
+		if ([dev hasMediaType:AVMediaTypeVideo] ||
+		    [dev hasMediaType:AVMediaTypeMuxed]) {
+
+			json_t *obj = json_object();
+			json_array_append(array, obj);
+
+			json_object_set_new(obj, "deviceName", json_string(dev.localizedName.UTF8String));
+			json_object_set_new(obj, "deviceId", json_string(dev.uniqueID.UTF8String));
+
+			json_t *resolutionArray = json_array();
+			json_object_set_new(obj, "resolutions", resolutionArray);
+
+			for (NSString *preset in presets())
+			{
+				if([dev supportsAVCaptureSessionPreset:preset])
+				{
+					json_t *obj = json_object();
+					json_array_append(resolutionArray, obj);
+					if (preset == AVCaptureSessionPreset1280x720)
+					{
+						json_object_set_new(obj, "width", json_integer(1280));
+						json_object_set_new(obj, "height", json_integer(720));
+					}
+					else if (preset == AVCaptureSessionPreset640x480)
+					{
+						json_object_set_new(obj, "width", json_integer(640));
+						json_object_set_new(obj, "height", json_integer(480));
+					}
+					else if (preset == AVCaptureSessionPreset352x288)
+					{
+						json_object_set_new(obj, "width", json_integer(352));
+						json_object_set_new(obj, "height", json_integer(288));
+					}
+					else if (preset == AVCaptureSessionPreset320x240)
+					{
+						json_object_set_new(obj, "width", json_integer(320));
+						json_object_set_new(obj, "height", json_integer(240));
+					}
+				}
+			}
+		}
+	}
+
+	return array;
+}
+
 static void switch_device(av_capture *capture, NSString *uid,
 			  obs_data_t *settings)
 {
@@ -2193,6 +2246,7 @@ bool obs_module_load(void)
 		.destroy = av_capture_destroy,
 		.get_defaults = av_capture_defaults,
 		.get_properties = av_capture_properties,
+		.get_device_list = av_get_device_list,
 		.update = av_capture_update,
 		.icon_type = OBS_ICON_TYPE_CAMERA,
 	};

@@ -9,7 +9,8 @@ find_library(COCOA Cocoa)
 include_directories(${COREAUDIO}
                     ${AUDIOUNIT}
                     ${COREFOUNDATION}
-		    ${IOSURF}
+			${IOSURF}
+			${JANSSON_INCLUDE_DIRS}
 		    ${COCOA})
 
 set(mac-capture_HEADERS
