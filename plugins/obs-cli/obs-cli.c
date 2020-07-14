@@ -9,10 +9,15 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include "obs-cli.h"
 #include <jansson.h>
 #include "util/threading.h"
+
+#ifndef _WIN64
+#include <unistd.h>
+#else
+#define ssize_t long
+#endif
 
 #define OBSCLI_LOGFILE_ENV "OBSCLI_LOGFILE_ENV"
 
@@ -511,11 +516,10 @@ int main(int argc, char *argv[])
 
 
 	// Loop forever reading one line at a time
-	char *line = NULL;
-	size_t len = 0;
+	char line[2048];
 	ssize_t read;
 
-	while ((read = getline(&line, &len, stdin)) != -1) {
+	 while (fgets(line, 2048, stdin)) {
 		fprintf(stderr, "Read line %s\n", line);
 		if (!line) {
 			fprintf(stderr, "Bad line\n");
@@ -523,14 +527,9 @@ int main(int argc, char *argv[])
 		}
 
 		json_t *root;
-    	json_error_t error;
+    		json_error_t error;
 
 		root = json_loads(line, 0, &error);
-
-		if (line) {
-			free(line);
-			line = NULL;
-		}
 
 		if (!root) {
 			fprintf(stderr, "error: on line %d: %s\n", error.line, error.text);
