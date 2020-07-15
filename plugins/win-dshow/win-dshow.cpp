@@ -9,6 +9,7 @@
 #include "libdshowcapture/dshowcapture.hpp"
 #include "ffmpeg-decode.h"
 #include "encode-dstr.hpp"
+#include <jansson.h>
 
 #include <algorithm>
 #include <limits>
@@ -2004,6 +2005,45 @@ static void ShowDShowInput(void *data)
 		input->QueueAction(Action::Activate);
 }
 
+static json_t *GetDShowDeviceList(void *capture)
+{
+	json_t *array = json_array();
+
+	vector<VideoDevice> devices;
+	Device::EnumVideoDevices(devices);
+
+	for (int i=0;i<devices.size();i++)
+	{
+		json_t *obj = json_object();
+		json_array_append(array, obj);
+
+		BPtr<char> deviceName_utf8;
+		os_wcs_to_utf8_ptr(devices[i].name.c_str(),
+				   devices[i].name.size(), &deviceName_utf8);
+
+		json_object_set_new(obj, "deviceName", json_string(deviceName_utf8));
+
+		BPtr<char> devicePath_utf8;
+		os_wcs_to_utf8_ptr(devices[i].path.c_str(),
+				   devices[i].path.size(), &devicePath_utf8);
+		json_object_set_new(obj, "deviceId", json_string(devicePath_utf8));
+
+		json_t *resolutionArray = json_array();
+		json_object_set_new(obj, "resolutions", resolutionArray);
+
+		for (int j = 0; j < devices[i].caps.size();j++)
+		{
+			json_t *resObj = json_object();
+			json_array_append(resolutionArray, resObj);
+
+			json_object_set_new(resObj, "width", json_integer(devices[i].caps[j].maxCX));
+			json_object_set_new(resObj, "height", json_integer(devices[i].caps[j].maxCY));
+		}
+	}
+
+	return array;
+}
+
 void RegisterDShowSource()
 {
 	SetLogCallback(DShowModuleLogCallback, nullptr);
@@ -2021,6 +2061,7 @@ void RegisterDShowSource()
 	info.update = UpdateDShowInput;
 	info.get_defaults = GetDShowDefaults;
 	info.get_properties = GetDShowProperties;
+	info.get_device_list = GetDShowDeviceList;
 	info.icon_type = OBS_ICON_TYPE_CAMERA;
 	obs_register_source(&info);
 }

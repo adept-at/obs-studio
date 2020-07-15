@@ -125,7 +125,8 @@ static int initialize(json_t *obj)
 	obs_post_load_modules();
 	blog(LOG_INFO, "Done loading modules");
 
-	displaySource = obs_source_create("display_capture", "Display Capture", NULL, NULL);
+	// TODO - pass the source in as a param
+	displaySource = obs_source_create("monitor_capture", "Display Capture", NULL, NULL);
 	if (!displaySource) {
 		blog(LOG_ERROR, "Unable to create source");
 		return 1;
@@ -133,14 +134,14 @@ static int initialize(json_t *obj)
 		blog(LOG_INFO, "Created display capture!");
 	}
 
-	audioSource = obs_source_create("coreaudio_input_capture", "Microphone", NULL, NULL);
+	audioSource = obs_source_create("wasapi_input_capture", "Microphone", NULL, NULL);
 	if (!audioSource) {
 		blog(LOG_ERROR, "Unable to create audio source");
 	} else {
 		blog(LOG_INFO, "Created audio source");
 	}
 
-	webcamSource = obs_source_create("av_capture_input", "Webcam Capture", NULL, NULL);
+	webcamSource = obs_source_create("dshow_input", "Webcam Capture", NULL, NULL);
 	if (!webcamSource) {
 		blog(LOG_ERROR, "Unable to create webcam source");
 	} else {
@@ -234,7 +235,9 @@ static int initializeSingleVideoRecording(json_t* obj)
 		int displayNum = json_integer_value(displayNumObj);
 
 		obs_data_t *displaySettings = obs_data_create();
-		obs_data_set_int(displaySettings, "display", displayNum);
+		//obs_data_set_int(displaySettings, "display", displayNum);
+
+		obs_data_set_int(displaySettings, "monitor", displayNum);
 
 		if (cropLeft!=0 || cropRight!=0 || cropTop != 0 || cropBottom != 0)
 		{
@@ -345,7 +348,7 @@ static const int startRecording(json_t* command)
 	blog(LOG_INFO, "Created encoder\n");
 
 	audioEncoder = obs_audio_encoder_create(
-		"CoreAudio_AAC", "simple_aac_recording", NULL, 0, NULL);
+		"ffmpeg_aac", "simple_aac_recording", NULL, 0, NULL);
 	if (!audioEncoder) {
 		blog(LOG_ERROR, "ERROR MAKING ENCODER");
 	}
