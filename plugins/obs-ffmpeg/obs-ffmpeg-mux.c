@@ -253,7 +253,8 @@ static void build_command_line(struct ffmpeg_muxer *stream, struct dstr *cmd,
 	blog(LOG_INFO, "cmd so far: %s", cmd->array);
 
 	dstr_cat(cmd, "\"");
-	dstr_cat(cmd, os_get_executable_path_in_dir_ptr(parentDir, FFMPEG_MUX));
+	//dstr_cat(cmd, os_get_executable_path_in_dir_ptr(parentDir, FFMPEG_MUX));
+	dstr_cat(cmd, "C:\\Users\\kjohnston\\obsbuild\\staging\\obs-ffmpeg-mux.exe");
 	dstr_cat(cmd, "\" \"");
 
 	blog(LOG_INFO, "cmd so far: %s", cmd->array);
