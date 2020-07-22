@@ -14,6 +14,7 @@
 #include "obs-cli.h"
 #include <jansson.h>
 #include "util/threading.h"
+#include "obs-scene.h"
 
 #ifndef _WIN64
 #include <unistd.h>
@@ -27,7 +28,7 @@ static obs_output_t *fileOutput = NULL;
 static obs_source_t *audioSource = NULL;
 static obs_source_t *displaySource = NULL;
 static obs_source_t *webcamSource = NULL;
-
+static obs_scene_t *scene = NULL;
 static obs_encoder_t *encoder;
 static obs_encoder_t *audioEncoder;
 
@@ -198,11 +199,6 @@ static int initialize(json_t *obj)
 		blog(LOG_INFO, "created av capture!");
 	}
 
-	struct video_scale_info info = {0};
-	info.format = VIDEO_FORMAT_RGBA;
-
-	obs_add_raw_video_callback(&info, receive_video, NULL);
-
 	return 0;
 }
 
@@ -285,6 +281,8 @@ static int initializeSingleVideoRecording(json_t *obj)
 
 		obs_data_set_int(displaySettings, "monitor", displayNum);
 
+		// These do not work on windows
+		/*
 		if (cropLeft != 0 || cropRight != 0 || cropTop != 0 ||
 		    cropBottom != 0) {
 			obs_data_set_int(displaySettings, "crop_mode", 1);
@@ -302,9 +300,35 @@ static int initializeSingleVideoRecording(json_t *obj)
 		} else {
 			obs_data_set_int(displaySettings, "crop_mode", 0);
 		}
+		*/
 
-		obs_source_update(displaySource, displaySettings);
-		obs_set_output_source(0, displaySource);
+		// obs_source_update(displaySource, displaySettings);
+
+		obs_scene_t *scene = obs_scene_create("Test");
+		struct obs_scene_item *item;
+
+		item = obs_scene_add(scene, displaySource);
+		if (item == NULL) {
+			blog(LOG_ERROR, "Could not add scene item");
+		} else {
+			blog(LOG_INFO, "Added video to scene");
+		}
+		item->crop.left = cropLeft;
+		item->crop.top = cropTop;
+		item->crop.right = cropRight;
+		item->crop.bottom = cropBottom;
+
+		obs_sceneitem_force_update_transform(item);
+
+		item = obs_scene_add(scene, audioSource);
+		if (item == NULL) {
+			blog(LOG_ERROR, "Could not add scene item");
+		} else {
+			blog(LOG_INFO, "Added audio to scene");
+		}
+
+		// Note you must get the source from the scene
+		obs_set_output_source(0, obs_scene_get_source(scene));
 
 		blog(LOG_INFO, "Set display to %d", displayNum);
 	} else if (strcmp(deviceType, "webcam") == 0) {
@@ -318,6 +342,9 @@ static int initializeSingleVideoRecording(json_t *obj)
 		const char *deviceId = json_string_value(deviceIdObj);
 		obs_data_t *settings = obs_data_create();
 		obs_data_set_string(settings, "video_device_id", deviceId);
+		obs_data_set_string(settings, "resolution", "1280x720");
+		obs_data_set_int(settings, "res_type",1);
+
 		obs_source_update(webcamSource, settings);
 
 		obs_set_output_source(0, webcamSource);
@@ -557,8 +584,13 @@ static const json_t *parse_command(json_t *command)
 	} else if (strcmp(action, "listDisplays") == 0) {
 		fprintf(stderr, "Listing Display Devices");
 		list_display_devices(returnObj);
-	} else if (strcmp(action, "startRenderFramesPipe") == 0)
-	{
+	} else if (strcmp(action, "startRenderFramesPipe") == 0) {
+		// Hook up the listner here at the last possible minute
+		// because if it is added earlier we can't change video size.
+		struct video_scale_info info = {0};
+		info.format = VIDEO_FORMAT_RGBA;
+		obs_add_raw_video_callback(&info, receive_video, NULL);
+
 		connect_to_local();
 	}
 	char *str = json_dumps(returnObj, JSON_INDENT(2));
