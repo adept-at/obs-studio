@@ -32,6 +32,9 @@ static obs_encoder_t *encoder = NULL;
 static obs_encoder_t *audioEncoder = NULL;
 static obs_scene_t *scene = NULL;
 
+static s_output_width = 0;
+static s_output_height = 0;
+
 static SOCKET sock = INVALID_SOCKET;
 
 // We write to stdout when we get certain events from
@@ -86,12 +89,12 @@ static void connect_to_local(int port)
 
 static void receive_video(void *param, struct video_data *frame)
 {
-	if (sock == INVALID_SOCKET)
+	if (sock == INVALID_SOCKET || s_output_width == 0 || s_output_height == 0)
 	{
 		return;
 	}
 
-	int frame_size = 1280 * 720 * 4;
+	int frame_size = s_output_width * s_output_height * 4;
 
 	send(sock, frame->data[0], frame_size, 0);
 }
@@ -240,6 +243,10 @@ static int initializeSingleVideoRecording(json_t *obj)
 	}
 	int outputHeight = json_integer_value(outputHeightObj);
 
+	// Copy to statics for sending frames to electron
+	s_output_width = outputWidth;
+	s_output_height = outputHeight;
+
 	json_t *deviceTypeObj = json_object_get(obj, "deviceType");
 	if (!json_is_string(deviceTypeObj)) {
 		fprintf(stderr, "error: deviceTypeObj is not a string\n");
@@ -334,10 +341,15 @@ static int initializeSingleVideoRecording(json_t *obj)
 			fprintf(stderr, "error: deviceIdObj is not a string\n");
 			return 0;
 		}
+
+		char resolution[32];
+		sprintf(resolution, "%dx%d", inputWidth, inputHeight);
+
 		const char *deviceId = json_string_value(deviceIdObj);
 		obs_data_t *settings = obs_data_create();
 		obs_data_set_string(settings, "video_device_id", deviceId);
-		obs_data_set_string(settings, "resolution", "1280x720");
+		obs_data_set_string(settings, "resolution", resolution);
+		// Custom resolution
 		obs_data_set_int(settings, "res_type",1);
 
 		obs_source_update(webcamSource, settings);
