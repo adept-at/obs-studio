@@ -43,7 +43,7 @@ static void null_log_handler(int log_level, const char *format, va_list args,
 {
 }
 
-static void connect_to_local()
+static void connect_to_local(int port)
 {
 	int iResult = 0;
 
@@ -54,12 +54,17 @@ static void connect_to_local()
 		return 1;
 	}
 
+	// If there was an existing socket - close it
+	if (sock != INVALID_SOCKET) {
+		closesocket(sock);
+	}
+
 	sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
 	struct sockaddr_in clientService;
 	clientService.sin_family = AF_INET;
 	clientService.sin_addr.s_addr = inet_addr("127.0.0.1");
-	clientService.sin_port = htons(27015);
+	clientService.sin_port = htons(port);
 
 	//----------------------
 	// Connect to server.
@@ -581,7 +586,11 @@ static const json_t *parse_command(json_t *command)
 		info.format = VIDEO_FORMAT_RGBA;
 		obs_add_raw_video_callback(&info, receive_video, NULL);
 
-		connect_to_local();
+		json_t *portObj = json_object_get(command, "port");
+		if (portObj) {
+			int port = json_integer_value(portObj);
+			connect_to_local(port);
+		}
 	}
 	char *str = json_dumps(returnObj, JSON_INDENT(2));
 
