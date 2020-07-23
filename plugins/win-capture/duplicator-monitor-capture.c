@@ -3,6 +3,8 @@
 #include <obs-module.h>
 #include <util/dstr.h>
 
+#include <jansson.h>
+
 #include "cursor-capture.h"
 
 #define do_log(level, format, ...)                                \
@@ -308,6 +310,44 @@ static obs_properties_t *duplicator_capture_properties(void *unused)
 	return props;
 }
 
+static bool get_monitor_properties(json_t *array, int monitor_idx)
+{
+	struct dstr monitor_desc = {0};
+	struct gs_monitor_info info;
+
+	if (!gs_get_duplicator_monitor_info(monitor_idx, &info))
+		return false;
+
+	json_t *obj = json_object();
+	json_array_append(array, obj);
+
+	json_object_set_new(obj, "displayNum", json_integer(monitor_idx));
+	json_object_set_new(obj, "width", json_integer(info.cx));
+	json_object_set_new(obj, "height", json_integer(info.cy));
+	json_object_set_new(obj, "x", json_integer(info.x));
+	json_object_set_new(obj, "y", json_integer(info.y));
+
+	dstr_free(&monitor_desc);
+
+	return true;
+}
+
+
+static json_t *duplicator_device_list(void *capture)
+{
+	json_t *array = json_array();
+
+	int monitor_idx = 0;
+
+	obs_enter_graphics();
+
+	while (get_monitor_properties(array, monitor_idx++));
+
+	obs_leave_graphics();
+
+	return array;
+}
+
 struct obs_source_info duplicator_capture_info = {
 	.id = "monitor_capture",
 	.type = OBS_SOURCE_TYPE_INPUT,
@@ -323,5 +363,6 @@ struct obs_source_info duplicator_capture_info = {
 	.get_height = duplicator_capture_height,
 	.get_defaults = duplicator_capture_defaults,
 	.get_properties = duplicator_capture_properties,
+	.get_device_list = duplicator_device_list,
 	.icon_type = OBS_ICON_TYPE_DESKTOP_CAPTURE,
 };

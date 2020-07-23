@@ -28,9 +28,9 @@ static obs_output_t *fileOutput = NULL;
 static obs_source_t *audioSource = NULL;
 static obs_source_t *displaySource = NULL;
 static obs_source_t *webcamSource = NULL;
+static obs_encoder_t *encoder = NULL;
+static obs_encoder_t *audioEncoder = NULL;
 static obs_scene_t *scene = NULL;
-static obs_encoder_t *encoder;
-static obs_encoder_t *audioEncoder;
 
 static SOCKET sock = INVALID_SOCKET;
 
@@ -277,34 +277,24 @@ static int initializeSingleVideoRecording(json_t *obj)
 		int displayNum = json_integer_value(displayNumObj);
 
 		obs_data_t *displaySettings = obs_data_create();
-		//obs_data_set_int(displaySettings, "display", displayNum);
 
+		#ifdef _WIN32
 		obs_data_set_int(displaySettings, "monitor", displayNum);
+		#else
+		obs_data_set_int(displaySettings, "display", displayNum);
+		#endif
 
-		// These do not work on windows
-		/*
-		if (cropLeft != 0 || cropRight != 0 || cropTop != 0 ||
-		    cropBottom != 0) {
-			obs_data_set_int(displaySettings, "crop_mode", 1);
-			obs_data_set_double(displaySettings, "manual.origin.x",
-					    cropLeft);
-			obs_data_set_double(displaySettings, "manual.origin.y",
-					    cropTop);
+		obs_source_update(displaySource, displaySettings);
 
-			// These settings are a little misnamed - it actually treats them
-			// like corpping the right and bottom instead of width and height
-			obs_data_set_double(displaySettings,
-					    "manual.size.width", cropRight);
-			obs_data_set_double(displaySettings,
-					    "manual.size.height", cropBottom);
-		} else {
-			obs_data_set_int(displaySettings, "crop_mode", 0);
+		// Delete old scene
+		if (scene) {
+			obs_set_output_source(0, NULL);
+			obs_scene_release(scene);
 		}
-		*/
 
-		// obs_source_update(displaySource, displaySettings);
+		scene = obs_scene_create("Test");
+		obs_scene_addref(scene);
 
-		obs_scene_t *scene = obs_scene_create("Test");
 		struct obs_scene_item *item;
 
 		item = obs_scene_add(scene, displaySource);
