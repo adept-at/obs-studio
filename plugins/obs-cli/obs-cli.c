@@ -610,21 +610,10 @@ static const json_t *parse_command(json_t *command)
 }
 
 #ifdef _WIN32
-long __stdcall WindowProcedure(HWND window, unsigned int msg, WPARAM wp,
-			       LPARAM lp)
-{
-	switch (msg) {
-	case WM_DESTROY:
-		PostQuitMessage(0);
-		return 0L;
-	// fall thru
-	default:
-		return DefWindowProc(window, msg, wp, lp);
-	}
-}
-
 int wmain(int argc, wchar_t *argv_w[])
 {
+	// Make sure we are system DPI aware
+	SetProcessDPIAware();
 #else
 int main(int argc, char *argv[])
 {
