@@ -4,6 +4,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <ShellScalingApi.h>
 #define inline __inline
 
 #endif
@@ -21,8 +22,6 @@
 #else
 #define ssize_t long
 #endif
-
-#define OBSCLI_LOGFILE_ENV "OBSCLI_LOGFILE_ENV"
 
 static obs_output_t *fileOutput = NULL;
 static obs_source_t *audioSource = NULL;
@@ -48,6 +47,9 @@ static void null_log_handler(int log_level, const char *format, va_list args,
 
 static void connect_to_local(int port)
 {
+#ifndef _WIN64
+	// TODO - fill in for OSX
+#else
 	int iResult = 0;
 
 	WSADATA wsaData = {0};
@@ -85,10 +87,14 @@ static void connect_to_local(int port)
 	}
 
 	printf("Started socket for render frames\n");
+#endif
 }
 
 static void receive_video(void *param, struct video_data *frame)
 {
+#ifndef _WIN64
+	// TODO - fill in for OSX
+#else
 	if (sock == INVALID_SOCKET || s_output_width == 0 || s_output_height == 0)
 	{
 		return;
@@ -97,6 +103,7 @@ static void receive_video(void *param, struct video_data *frame)
 	int frame_size = s_output_width * s_output_height * 4;
 
 	send(sock, frame->data[0], frame_size, 0);
+#endif
 }
 
 static void output_stopped(void *my_data, calldata_t *cd)
@@ -155,7 +162,11 @@ static int initialize(json_t *obj)
 	struct obs_video_info ovi;
 	ovi.adapter = 0;
 	ovi.gpu_conversion = false;
+#ifndef _WIN64
+	ovi.graphics_module = "libobs-opengl";
+#else
 	ovi.graphics_module = "libobs-d3d11";
+#endif
 	ovi.fps_num = 30000;
 	ovi.fps_den = 1000;
 	ovi.base_width = 1280;
@@ -181,7 +192,33 @@ static int initialize(json_t *obj)
 	obs_post_load_modules();
 	blog(LOG_INFO, "Done loading modules");
 
-	// TODO - pass the source in as a param
+
+#ifndef _WIN64
+	displaySource = obs_source_create("display_capture", "Display Capture",
+					  NULL, NULL);
+	if (!displaySource) {
+		blog(LOG_ERROR, "Unable to create source");
+		return 1;
+	} else {
+		blog(LOG_INFO, "Created display capture!");
+	}
+
+	audioSource = obs_source_create("coreaudio_input_capture", "Microphone",
+					NULL, NULL);
+	if (!audioSource) {
+		blog(LOG_ERROR, "Unable to create audio source");
+	} else {
+		blog(LOG_INFO, "Created audio source");
+	}
+
+	webcamSource = obs_source_create("av_capture_input", "Webcam Capture",
+					 NULL, NULL);
+	if (!webcamSource) {
+		blog(LOG_ERROR, "Unable to create webcam source");
+	} else {
+		blog(LOG_INFO, "created av capture!");
+	}
+#else
 	displaySource = obs_source_create("monitor_capture", "Display Capture",
 					  NULL, NULL);
 	if (!displaySource) {
@@ -206,6 +243,7 @@ static int initialize(json_t *obj)
 	} else {
 		blog(LOG_INFO, "created av capture!");
 	}
+#endif
 
 	return 0;
 }
@@ -290,11 +328,11 @@ static int initializeSingleVideoRecording(json_t *obj)
 
 		obs_data_t *displaySettings = obs_data_create();
 
-		#ifdef _WIN32
-		obs_data_set_int(displaySettings, "monitor", displayNum);
-		#else
+#ifndef _WIN64
 		obs_data_set_int(displaySettings, "display", displayNum);
-		#endif
+#else
+		obs_data_set_int(displaySettings, "monitor", displayNum);
+#endif
 
 		obs_source_update(displaySource, displaySettings);
 
@@ -347,10 +385,16 @@ static int initializeSingleVideoRecording(json_t *obj)
 
 		const char *deviceId = json_string_value(deviceIdObj);
 		obs_data_t *settings = obs_data_create();
+
+
+#ifndef _WIN64
+		obs_data_set_string(settings, "device", deviceId);
+#else
 		obs_data_set_string(settings, "video_device_id", deviceId);
 		obs_data_set_string(settings, "resolution", resolution);
 		// Custom resolution
-		obs_data_set_int(settings, "res_type",1);
+		obs_data_set_int(settings, "res_type", 1);
+#endif
 
 		obs_source_update(webcamSource, settings);
 
@@ -365,7 +409,11 @@ static int initializeSingleVideoRecording(json_t *obj)
 	struct obs_video_info ovi;
 	ovi.adapter = 0;
 	ovi.gpu_conversion = false;
+#ifndef _WIN64
+	ovi.graphics_module = "libobs-opengl";
+#else
 	ovi.graphics_module = "libobs-d3d11";
+#endif
 	ovi.fps_num = 30000;
 	ovi.fps_den = 1000;
 	ovi.base_width = inputWidth;
@@ -391,9 +439,18 @@ static const int initializeAudio(json_t *command)
 	}
 	const char *deviceId = json_string_value(deviceIdObj);
 
+	json_t *syncOffsetMsObj = json_object_get(command, "syncOffsetMs");
+	if (!json_is_integer(syncOffsetMsObj)) {
+		fprintf(stderr, "error: syncOffsetMs is not an int\n");
+		return 0;
+	}
+	int syncOffSetMs = json_integer_value(syncOffsetMsObj);
+
 	obs_data_t *settings = obs_data_create();
 	obs_data_set_string(settings, "device_id", deviceId);
 	obs_source_update(audioSource, settings);
+
+	obs_source_set_sync_offset(audioSource, (int64_t)syncOffSetMs * (int64_t) 1000000);
 
 	blog(LOG_INFO, "Set audio to %s", deviceId);
 
@@ -612,8 +669,8 @@ static const json_t *parse_command(json_t *command)
 #ifdef _WIN32
 int wmain(int argc, wchar_t *argv_w[])
 {
-	// Make sure we are system DPI aware
-	SetProcessDPIAware();
+	// Must be per monitor DPI aware
+	SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
 #else
 int main(int argc, char *argv[])
 {

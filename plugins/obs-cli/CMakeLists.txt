@@ -17,6 +17,7 @@ set(obs-cli_LIBRARIES
 if(MSVC)
 	set(obs-cli_PLATFORM_DEPS
 	 	ws2_32
+        shcore
 		w32-pthreads)
 endif()
 
