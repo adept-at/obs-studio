@@ -457,6 +457,23 @@ static const int initializeAudio(json_t *command)
 	return 0;
 }
 
+static const int setAudioDelay(json_t *command)
+{
+	json_t *syncOffsetMsObj = json_object_get(command, "audioDelayMs");
+	if (!json_is_integer(syncOffsetMsObj)) {
+		fprintf(stderr, "error: audioDelayMs is not an int\n");
+		return 0;
+	}
+	int audioDelayMs = json_integer_value(syncOffsetMsObj);
+
+
+	obs_source_set_sync_offset(audioSource, (int64_t)audioDelayMs * (int64_t)1000000);
+
+	blog(LOG_INFO, "Set audio delay to %d ms", audioDelayMs);
+
+	return 0;
+}
+
 static const int startRecording(json_t *command)
 {
 	json_t *outputFileObj = json_object_get(command, "outputFile");
@@ -610,7 +627,12 @@ static const json_t *parse_command(json_t *command)
 		if (initializeAudio(command) != 0) {
 			fprintf(stderr, "Failed to initialize audio");
 		}
-	} else if (strcmp(action, "startRecording") == 0) {
+	} else if (strcmp(action, "setAudioDelay") == 0) {
+		if (setAudioDelay(command) != 0) {
+			fprintf(stderr, "Failed to set audio delay");
+		}
+	}
+	else if (strcmp(action, "startRecording") == 0) {
 		fprintf(stderr, "Starting recording");
 		startRecording(command);
 	} else if (strcmp(action, "pauseRecording") == 0) {
