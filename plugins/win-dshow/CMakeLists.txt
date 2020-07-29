@@ -6,7 +6,8 @@ endif()
 project(win-dshow)
 
 find_package(FFmpeg REQUIRED COMPONENTS avcodec avutil)
-include_directories(${FFMPEG_INCLUDE_DIRS})
+include_directories(${FFMPEG_INCLUDE_DIRS}
+				    ${JANSSON_INCLUDE_DIRS})
 
 set(win-dshow_HEADERS
 	encode-dstr.hpp
@@ -61,6 +62,7 @@ target_link_libraries(win-dshow
 	strmiids
 	ksuser
 	wmcodecdspuuid
+	${OBS_JANSSON_IMPORT}
 	${FFMPEG_LIBRARIES})
 set_target_properties(win-dshow PROPERTIES FOLDER "plugins")
 

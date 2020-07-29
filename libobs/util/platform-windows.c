@@ -320,6 +320,27 @@ char *os_get_executable_path_ptr(const char *name)
 	return path.array;
 }
 
+char *os_get_executable_path_in_dir_ptr(const char *parentDir, const char *name)
+{
+	char exe[MAX_PATH];
+	struct dstr path;
+	char *slash;
+
+	dstr_init_copy(&path, parentDir);
+	dstr_replace(&path, "\\", "/");
+
+	slash = strrchr(path.array, '/');
+	if (slash) {
+		size_t len = slash - path.array + 1;
+		dstr_resize(&path, len);
+	}
+
+	if (name && *name) {
+		dstr_cat(&path, name);
+	}
+	return path.array;
+}
+
 bool os_file_exists(const char *path)
 {
 	WIN32_FIND_DATAW wfd;
