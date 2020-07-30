@@ -31,8 +31,9 @@ static obs_encoder_t *encoder = NULL;
 static obs_encoder_t *audioEncoder = NULL;
 static obs_scene_t *scene = NULL;
 
-static s_output_width = 0;
-static s_output_height = 0;
+static int s_output_width = 0;
+static int s_output_height = 0;
+static bool s_raw_output_active = false;
 
 static SOCKET sock = INVALID_SOCKET;
 
@@ -90,6 +91,19 @@ static void connect_to_local(int port)
 #endif
 }
 
+static void disconnect_from_local()
+{
+#ifndef _WIN64
+	// TODO - fill in for OSX
+#else
+	// If there was an existing socket - close it
+	if (sock != INVALID_SOCKET) {
+		closesocket(sock);
+		sock = INVALID_SOCKET;
+	}
+#endif
+}
+
 static void receive_video(void *param, struct video_data *frame)
 {
 #ifndef _WIN64
@@ -101,7 +115,6 @@ static void receive_video(void *param, struct video_data *frame)
 	}
 
 	int frame_size = s_output_width * s_output_height * 4;
-
 	send(sock, frame->data[0], frame_size, 0);
 #endif
 }
@@ -281,9 +294,19 @@ static int initializeSingleVideoRecording(json_t *obj)
 	}
 	int outputHeight = json_integer_value(outputHeightObj);
 
-	// Copy to statics for sending frames to electron
-	s_output_width = outputWidth;
-	s_output_height = outputHeight;
+	json_t *scaledWidthObj = json_object_get(obj, "scaledWidth");
+	if (!json_is_integer(scaledWidthObj)) {
+		fprintf(stderr, "error: scaledWidth is not an integer\n");
+		return 1;
+	}
+	s_output_width = json_integer_value(scaledWidthObj);
+
+	json_t *scaledHeightObj = json_object_get(obj, "scaledHeight");
+	if (!json_is_integer(scaledHeightObj)) {
+		fprintf(stderr, "error: scaledHeight is not an integer\n");
+		return 1;
+	}
+	s_output_height = json_integer_value(scaledHeightObj);
 
 	json_t *deviceTypeObj = json_object_get(obj, "deviceType");
 	if (!json_is_string(deviceTypeObj)) {
@@ -423,9 +446,23 @@ static int initializeSingleVideoRecording(json_t *obj)
 	ovi.output_format = VIDEO_FORMAT_RGBA;
 	ovi.scale_type = OBS_SCALE_BILINEAR;
 
+	// Make sure to remove listener so that video is not considered active
+	if (s_raw_output_active) {
+		obs_remove_raw_video_callback(receive_video, NULL);
+		s_raw_output_active = false;
+	}
+
 	blog(LOG_INFO, "Resetting video");
 	int rc = obs_reset_video(&ovi);
 	blog(LOG_INFO, "Result: %d", rc);
+
+	// Now add raw video callback
+	struct video_scale_info info = {0};
+	info.format = VIDEO_FORMAT_RGBA;
+	info.width = s_output_width;
+	info.height = s_output_height;
+	obs_add_raw_video_callback(&info, receive_video, NULL);
+	s_raw_output_active = true;
 
 	return 0;
 }
@@ -671,17 +708,15 @@ static const json_t *parse_command(json_t *command)
 		fprintf(stderr, "Listing Display Devices");
 		list_display_devices(returnObj);
 	} else if (strcmp(action, "startRenderFramesPipe") == 0) {
-		// Hook up the listner here at the last possible minute
-		// because if it is added earlier we can't change video size.
-		struct video_scale_info info = {0};
-		info.format = VIDEO_FORMAT_RGBA;
-		obs_add_raw_video_callback(&info, receive_video, NULL);
-
 		json_t *portObj = json_object_get(command, "port");
 		if (portObj) {
 			int port = json_integer_value(portObj);
 			connect_to_local(port);
 		}
+	} else if (strcmp(action, "stopRenderFramesPipe") == 0) {
+		disconnect_from_local();
+	} else {
+		fprintf(stderr, "Unrecognized action: %s", action);
 	}
 	char *str = json_dumps(returnObj, JSON_INDENT(2));
 
