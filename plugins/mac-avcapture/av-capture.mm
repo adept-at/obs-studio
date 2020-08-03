@@ -2112,34 +2112,29 @@ static json_t *av_get_device_list(void* capture)
 			json_t *resolutionArray = json_array();
 			json_object_set_new(obj, "resolutions", resolutionArray);
 
-			for (NSString *preset in presets())
-			{
-				if([dev supportsAVCaptureSessionPreset:preset])
-				{
-					json_t *obj = json_object();
-					json_array_append(resolutionArray, obj);
-					if (preset == AVCaptureSessionPreset1280x720)
-					{
-						json_object_set_new(obj, "width", json_integer(1280));
-						json_object_set_new(obj, "height", json_integer(720));
-					}
-					else if (preset == AVCaptureSessionPreset640x480)
-					{
-						json_object_set_new(obj, "width", json_integer(640));
-						json_object_set_new(obj, "height", json_integer(480));
-					}
-					else if (preset == AVCaptureSessionPreset352x288)
-					{
-						json_object_set_new(obj, "width", json_integer(352));
-						json_object_set_new(obj, "height", json_integer(288));
-					}
-					else if (preset == AVCaptureSessionPreset320x240)
-					{
-						json_object_set_new(obj, "width", json_integer(320));
-						json_object_set_new(obj, "height", json_integer(240));
-					}
-				}
-			}
+            auto resolutions = enumerate_resolutions(dev);
+            
+            for (const CMVideoDimensions &dims : resolutions)
+            {
+                json_t *obj = json_object();
+                json_array_append(resolutionArray, obj);
+                
+                json_object_set_new(obj, "width", json_integer(dims.width));
+                json_object_set_new(obj, "height", json_integer(dims.height));
+                
+                json_t *frameRateArray = json_array();
+                json_object_set_new(obj, "frame_rates", frameRateArray);
+                
+                auto frame_rates = enumerate_frame_rates(dev, &dims);
+                for (auto &pair : frame_rates)
+                {
+                    json_t *obj = json_object();
+                    json_array_append(frameRateArray, obj);
+                    
+                    json_object_set_new(obj, "n", json_integer(pair.second.numerator));
+                    json_object_set_new(obj, "d", json_integer(pair.second.denominator));
+                }
+            }
 		}
 	}
 

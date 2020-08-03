@@ -19,8 +19,16 @@
 
 #ifndef _WIN64
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <sys/errno.h>
+static int sockfd = -1;
+static bool socket_ready = false;
 #else
 #define ssize_t long
+static SOCKET sock = INVALID_SOCKET;
 #endif
 
 static obs_output_t *fileOutput = NULL;
@@ -35,7 +43,6 @@ static int s_output_width = 0;
 static int s_output_height = 0;
 static bool s_raw_output_active = false;
 
-static SOCKET sock = INVALID_SOCKET;
 
 // We write to stdout when we get certain events from
 // obs and callbacks are not threadsafe, so we coordinate writes.
@@ -49,7 +56,31 @@ static void null_log_handler(int log_level, const char *format, va_list args,
 static void connect_to_local(int port)
 {
 #ifndef _WIN64
-	// TODO - fill in for OSX
+    socket_ready = false;
+ 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+ 	if (sockfd < 0) {
+        fprintf(stderr, "ERROR opening socket: %d\n", errno);
+        return;
+	}
+
+	struct sockaddr_in serv_addr;
+	bzero((char *) &serv_addr, sizeof(serv_addr));
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_port = htons(port);
+	serv_addr.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
+
+    fprintf(stderr, "Connecting to localhost %d ...\n", port);
+    
+	if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(struct sockaddr_in)) < 0) {
+        fprintf(stderr, "ERROR connecting to port %d: %d\n", port, errno);
+        close(sockfd);
+        sockfd = -1;
+	}
+    
+    fprintf(stderr, "Connected!\n");
+
+    socket_ready = true;
+    
 #else
 	int iResult = 0;
 
@@ -94,7 +125,11 @@ static void connect_to_local(int port)
 static void disconnect_from_local()
 {
 #ifndef _WIN64
-	// TODO - fill in for OSX
+	if (sockfd != -1) {
+        fprintf(stderr, "Closing socket\n");
+		close(sockfd);
+		sockfd = -1;
+	}
 #else
 	// If there was an existing socket - close it
 	if (sock != INVALID_SOCKET) {
@@ -106,15 +141,26 @@ static void disconnect_from_local()
 
 static void receive_video(void *param, struct video_data *frame)
 {
+	int frame_size = s_output_width * s_output_height * 4;
+	if (frame_size == 0) {
+		return;
+	}
+
 #ifndef _WIN64
-	// TODO - fill in for OSX
+	if (sockfd == -1 || !socket_ready) {
+		return;
+	}
+    
+	int n = write(sockfd,frame->data[0], frame_size);
+    if (n < 0) {
+    	fprintf(stderr, "ERROR writing to socket\n");
+    }
 #else
-	if (sock == INVALID_SOCKET || s_output_width == 0 || s_output_height == 0)
+	if (sock == INVALID_SOCKET)
 	{
 		return;
 	}
 
-	int frame_size = s_output_width * s_output_height * 4;
 	send(sock, frame->data[0], frame_size, 0);
 #endif
 }
@@ -403,16 +449,41 @@ static int initializeSingleVideoRecording(json_t *obj)
 			return 0;
 		}
 
-		char resolution[32];
-		sprintf(resolution, "%dx%d", inputWidth, inputHeight);
-
 		const char *deviceId = json_string_value(deviceIdObj);
 		obs_data_t *settings = obs_data_create();
 
 
 #ifndef _WIN64
+        // osx wants json obj for resolution
+        char resolution[128];
+        sprintf(resolution, "{ \"width\": %d, \"height\": %d }", inputWidth, inputHeight);
+        
+        json_t *numeratorObj = json_object_get(obj, "fpsNumerator");
+        if (!json_is_number(numeratorObj)) {
+            fprintf(stderr, "error: fpsNum is not a number\n");
+            return 0;
+        }
+        int numerator = json_integer_value(numeratorObj);
+        
+        json_t *denominatorObj = json_object_get(obj, "fpsDenominator");
+        if (!json_is_number(denominatorObj)) {
+            fprintf(stderr, "error: denominatorObj is not a number\n");
+            return 0;
+        }
+        int denominator = json_integer_value(denominatorObj);
+        
 		obs_data_set_string(settings, "device", deviceId);
+        obs_data_set_bool(settings, "use_preset", false);
+        obs_data_set_string(settings, "resolution", resolution);
+        
+        struct media_frames_per_second fps;
+        fps.numerator = numerator;
+        fps.denominator = denominator;
+        obs_data_set_frames_per_second(settings, "frame_rate", fps, NULL);
 #else
+        char resolution[32];
+        sprintf(resolution, "%dx%d", inputWidth, inputHeight);
+        
 		obs_data_set_string(settings, "video_device_id", deviceId);
 		obs_data_set_string(settings, "resolution", resolution);
 		// Custom resolution
@@ -780,5 +851,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
+    printf("Exiting\n");
+    
 	return 0;
 }
