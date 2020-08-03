@@ -151,10 +151,7 @@ static void receive_video(void *param, struct video_data *frame)
 		return;
 	}
     
-	int n = write(sockfd,frame->data[0], frame_size);
-    if (n < 0) {
-    	fprintf(stderr, "ERROR writing to socket\n");
-    }
+	write(sockfd,frame->data[0], frame_size);
 #else
 	if (sock == INVALID_SOCKET)
 	{
