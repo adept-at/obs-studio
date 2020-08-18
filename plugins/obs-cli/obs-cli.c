@@ -721,6 +721,10 @@ static int initializeStreaming(json_t *obj)
 			int cropRight = 0;
 			int cropTop = 0;
 			int cropBottom = 0;
+			int x = 0;
+			int y = 0;
+			float scaleX = 1.0;
+			float scaleY = 1.0;
 
 			json_t *cropLeftObj =
 				json_object_get(itemSourceInfo, "cropLeft");
@@ -742,10 +746,28 @@ static int initializeStreaming(json_t *obj)
 			if (cropBottomObj) {
 				cropBottom = json_integer_value(cropBottomObj);
 			}
+			json_t *posXObj =
+				json_object_get(itemSourceInfo, "x");
+			if (posXObj) {
+				x = json_integer_value(posXObj);
+			}
+			json_t *posYObj = json_object_get(itemSourceInfo, "y");
+			if (posYObj) {
+				y = json_integer_value(posYObj);
+			}
+			json_t *scaleXObj = json_object_get(itemSourceInfo, "scaleX");
+			if (scaleXObj) {
+				scaleX = json_real_value(scaleXObj);
+			}
+			json_t *scaleYObj =
+				json_object_get(itemSourceInfo, "scaleY");
+			if (scaleYObj) {
+				scaleY = json_real_value(scaleYObj);
+			}
+
+			struct obs_scene_item *item = NULL;
 
 			if (strncmp(sourceType, "webcam", 6) == 0) {
-				struct obs_scene_item *item;
-
 				item = obs_scene_add(scene, webcamSource);
 				if (item == NULL) {
 					blog(LOG_ERROR,
@@ -754,16 +776,7 @@ static int initializeStreaming(json_t *obj)
 				} else {
 					blog(LOG_INFO, "Added webcam to scene");
 				}
-
-				item->crop.left = cropLeft;
-				item->crop.top = cropTop;
-				item->crop.right = cropRight;
-				item->crop.bottom = cropBottom;
-
-				obs_sceneitem_force_update_transform(item);
 			} else if (strncmp(sourceType, "monitor", 7) == 0) {
-				struct obs_scene_item *item;
-
 				item = obs_scene_add(scene, displaySource);
 				if (item == NULL) {
 					blog(LOG_ERROR,
@@ -773,25 +786,28 @@ static int initializeStreaming(json_t *obj)
 					blog(LOG_INFO,
 					     "Added monitor to scene");
 				}
-
-				item->crop.left = cropLeft;
-				item->crop.top = cropTop;
-				item->crop.right = cropRight;
-				item->crop.bottom = cropBottom;
-
-				obs_sceneitem_force_update_transform(item);
 			} else if (strncmp(sourceType, "microphone", 10) == 0) {
-				struct obs_scene_item *item;
 				item = obs_scene_add(scene, audioSource);
 
 				if (item == NULL) {
 					blog(LOG_ERROR,
 					     "Could not add microphone item");
+					continue;
 				} else {
 					blog(LOG_INFO,
 					     "Added microphone to scene");
 				}
 			}
+
+			item->crop.left = cropLeft;
+			item->crop.top = cropTop;
+			item->crop.right = cropRight;
+			item->crop.bottom = cropBottom;
+			item->pos.x = x;
+			item->pos.y = y;
+			item->scale.x = scaleX;
+			item->scale.y = scaleY;
+			obs_sceneitem_force_update_transform(item);
 		}
 	}
 
