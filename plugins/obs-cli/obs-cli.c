@@ -612,7 +612,7 @@ static int initializeStreaming(json_t *obj)
         {
             blog(LOG_INFO, "initializing webcam");
 
-            json_t *deviceIdObj = json_object_get(sourceTypeObj, "deviceId");
+            json_t *deviceIdObj = json_object_get(sourceInfo, "deviceId");
             if (!json_is_string(deviceIdObj)) {
                 fprintf(stderr, "error: deviceIdObj is not a string\n");
                 return 0;
@@ -667,7 +667,7 @@ static int initializeStreaming(json_t *obj)
         else if (strncmp(sourceType,"monitor",7) == 0)
         {
             blog(LOG_INFO, "initializing monitor");
-            json_t *displayNumObj = json_object_get(obj, "displayNum");
+            json_t *displayNumObj = json_object_get(sourceInfo, "displayNum");
             if (!json_is_integer(displayNumObj)) {
                 fprintf(stderr,
                     "error: displayNum is not an integer\n");
