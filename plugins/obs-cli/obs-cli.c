@@ -660,8 +660,6 @@ static int initializeStreaming(json_t *obj)
 
             obs_source_update(webcamSource, settings);
 
-            obs_set_output_source(i, webcamSource);
-
             blog(LOG_INFO, "Set webcam to %s", deviceId);
         }
         else if (strncmp(sourceType,"monitor",7) == 0)
@@ -683,14 +681,11 @@ static int initializeStreaming(json_t *obj)
                 obs_data_set_int(displaySettings, "monitor", displayNum);
             #endif
 
-            // Note you must get the source from the scene
-            obs_set_output_source(i, obs_scene_get_source(scene));
-
             blog(LOG_INFO, "Set display to %d", displayNum);
         }
         else if (strncmp(sourceType,"microphone", 10) == 0)
         {
-            obs_set_output_source(i, audioSource);
+
         }
     }
     
@@ -702,6 +697,7 @@ static int initializeStreaming(json_t *obj)
         char* sceneName = malloc(sizeof(char) * 10);
         sprintf(sceneName, "Scene_%d",i);
         obs_scene_t* scene = obs_scene_create(sceneName);
+	streamingScenes[i] = scene;
         
         json_t* sceneInfo = json_array_get(scenes, i);
         
@@ -745,6 +741,7 @@ static int initializeStreaming(json_t *obj)
                 item = obs_scene_add(scene, webcamSource);
                 if (item == NULL) {
                   blog(LOG_ERROR, "Could not add scene item");
+		  continue;
                 } else {
                   blog(LOG_INFO, "Added webcam to scene");
                 }
@@ -764,6 +761,7 @@ static int initializeStreaming(json_t *obj)
                 item = obs_scene_add(scene, displaySource);
                 if (item == NULL) {
                     blog(LOG_ERROR, "Could not add monitor item");
+		    continue;
                 } else {
                     blog(LOG_INFO, "Added monitor to scene");
                 }
@@ -787,9 +785,9 @@ static int initializeStreaming(json_t *obj)
                 }
             }
         }
-        
     }
-   
+
+    obs_set_output_source(0, obs_scene_get_source(streamingScenes[0]));
 
     struct obs_video_info ovi;
     ovi.adapter = 0;
@@ -947,7 +945,7 @@ static const int startStreaming(json_t *command)
     obs_service_update(service, settings);
     
     streamOutput = obs_output_create("rtmp_output", "adv_stream", NULL, NULL);
-    if (!fileOutput) {
+    if (!streamOutput) {
         blog(LOG_ERROR, "ERROR creating stream output\n");
         return 1;
     }
@@ -978,13 +976,21 @@ static const int startStreaming(json_t *command)
         fprintf(stderr, "Failed to start stream");
         return 1;
     }
+    blog(LOG_INFO, "Streaming started!");
 
     return 0;
 }
 
 static const int switchToScene(json_t *command)
 {
-    return 0;
+	json_t *sceneNumObj = json_object_get(command, "sceneNum");
+	if (!json_is_integer(sceneNumObj)) {
+		fprintf(stderr, "error: sceneNumObj is not an int\n");
+		return 0;
+	}
+	int sceneNum = json_integer_value(sceneNumObj);
+
+	obs_set_output_source(0, obs_scene_get_source(streamingScenes[sceneNum]));
 }
 
 static const list_audio_devices(json_t *returnObj)
