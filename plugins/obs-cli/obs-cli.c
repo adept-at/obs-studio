@@ -298,6 +298,15 @@ static int initialize(json_t *obj)
 		blog(LOG_INFO, "Created audio source");
 	}
 
+	
+	desktopAudioSource = obs_source_create("wasapi_output_capture", "DesktopAudio",
+					NULL, NULL);
+	if (!desktopAudioSource) {
+		blog(LOG_ERROR, "Unable to create desktop audio source");
+	} else {
+		blog(LOG_INFO, "Created desktop audio source");
+	}
+
 	webcamSource =
 		obs_source_create("dshow_input", "Webcam Capture", NULL, NULL);
 	if (!webcamSource) {
@@ -796,6 +805,17 @@ static int initializeStreaming(json_t *obj)
 				} else {
 					blog(LOG_INFO,
 					     "Added microphone to scene");
+				}
+			} else if (strncmp(sourceType, "desktopAudio", 12) ==
+				   0) {
+				item = obs_scene_add(scene, desktopAudioSource);
+				if (item == NULL) {
+					blog(LOG_ERROR,
+					     "Could not add desktop audio item");
+					continue;
+				} else {
+					blog(LOG_INFO,
+					     "Added desktop audio to scene");
 				}
 			}
 
