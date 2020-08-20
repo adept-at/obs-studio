@@ -951,16 +951,15 @@ static const int startRecording(json_t *command)
 
 	obs_set_output_source(1, audioSource);
 
-	encoder = obs_video_encoder_create("obs_x264", "simple_h264_recording",
-					   NULL, NULL);
+	encoder = obs_video_encoder_create("obs_x264", "simple_h264_recording", NULL, NULL);
 	if (!encoder) {
 		blog(LOG_ERROR, "ERROR MAKING ENCODER");
 		return 1;
 	}
 	blog(LOG_INFO, "Created encoder\n");
 
-	audioEncoder = obs_audio_encoder_create(
-		"ffmpeg_aac", "simple_aac_recording", NULL, 0, NULL);
+
+	audioEncoder = obs_audio_encoder_create("ffmpeg_aac", "simple_aac_recording", NULL, 0, NULL);
 	if (!audioEncoder) {
 		blog(LOG_ERROR, "ERROR MAKING ENCODER");
 	}
@@ -1011,8 +1010,12 @@ static const int startStreaming(json_t *command)
 		return 1;
 	}
 
+	obs_data_t *encoderSettings = obs_data_create();
+	obs_data_set_string(encoderSettings, "preset", "ultrafast");
+	obs_data_set_string(encoderSettings, "tune", "zerolatency");
+	obs_data_set_int(encoderSettings, "keyint_sec", 2);
 	encoder = obs_video_encoder_create("obs_x264", "simple_h264_streaming",
-					   NULL, NULL);
+					   encoderSettings, NULL);
 	if (!encoder) {
 		blog(LOG_ERROR, "ERROR MAKING ENCODER");
 		return 1;
