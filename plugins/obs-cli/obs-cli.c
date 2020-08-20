@@ -831,6 +831,20 @@ static int initializeStreaming(json_t *obj)
 		}
 	}
 
+
+	// Creaet file output
+	json_t *outputFileObj = json_object_get(obj, "outputFile");
+	if (!json_is_string(outputFileObj)) {
+		fprintf(stderr, "error: outputFileObj is not a string\n");
+		return 1;
+	}
+	const char *outputFilePath = json_string_value(outputFileObj);
+
+	obs_data_t *settings = obs_data_create();
+	obs_data_set_string(settings, "path", outputFilePath);
+	fileOutput = obs_output_create("ffmpeg_muxer", "simple_file_output", settings, NULL);
+
+	// Set output source
 	obs_set_output_source(0, obs_scene_get_source(streamingScenes[0]));
 
 	struct obs_video_info ovi;
@@ -1020,12 +1034,18 @@ static const int startStreaming(json_t *command)
 	obs_output_set_video_encoder(streamOutput, encoder);
 	obs_output_set_audio_encoder(streamOutput, audioEncoder, 0);
 
+	obs_output_set_video_encoder(fileOutput, encoder);
+	obs_output_set_audio_encoder(fileOutput, audioEncoder, 0);
+
 	blog(LOG_INFO, "Starting to stream");
 	if (!obs_output_start(streamOutput)) {
 		fprintf(stderr, "Failed to start stream");
 		return 1;
 	}
 	blog(LOG_INFO, "Streaming started!");
+
+	// also record
+	obs_output_start(fileOutput);
 
 	return 0;
 }
@@ -1152,6 +1172,18 @@ static const json_t *parse_command(json_t *command)
 		if (startStreaming(command) != 0) {
 			fprintf(stderr, "Failed to start streaming");
 		}
+	} else if (strcmp(action, "stopStreaming") == 0) {
+		fprintf(stderr, "stopStreaming");
+		fprintf(stderr, "Stopping recording");
+
+		signal_handler_t *handler =
+			obs_output_get_signal_handler(fileOutput);
+		signal_handler_connect(handler, "stop", output_stopped,
+				       bstrdup(actionId));
+
+		obs_output_stop(streamOutput);
+		obs_output_stop(fileOutput);
+
 	} else if (strcmp(action, "switchToScene") == 0) {
 		fprintf(stderr, "switchToScene");
 		if (switchToScene(command) != 0) {
