@@ -35,6 +35,48 @@
 #define CODEC_FLAG_GLOBAL_H CODEC_FLAG_GLOBAL_HEADER
 #endif
 
+static FILE *file = NULL;
+static FILE *logFile = NULL;
+
+static int IOWriteFunc(void *opaque, uint8_t *buf, int buf_size)
+{
+	fwrite(buf, sizeof(uint8_t), buf_size, file);
+	fprintf(logFile, "Wrote %d bytes\n", buf_size);
+	fflush(logFile);
+
+	int len = buf_size;
+	return (int)len;
+}
+
+static int64_t IOSeekFunc(void *opaque, int64_t offset, int whence)
+{
+	fprintf(logFile, "In IOSeekFunc: %d, %d\n", whence, offset);
+	fflush(logFile);
+
+	return fseek(file, offset, whence);
+
+	/*
+		switch (whence) {
+	case SEEK_SET:
+		return 1;
+		break;
+	case SEEK_CUR:
+		return 1;
+		break;
+	case SEEK_END:
+		return 1;
+		break;
+	case AVSEEK_SIZE:
+		return 4096;
+		break;
+	default:
+		return -1;
+	}
+	return 1;
+
+	*/
+}
+
 /* ------------------------------------------------------------------------- */
 
 struct resize_buf {
@@ -116,8 +158,16 @@ static void header_free(struct header *header)
 static void free_avformat(struct ffmpeg_mux *ffm)
 {
 	if (ffm->output) {
+		/*
 		if ((ffm->output->oformat->flags & AVFMT_NOFILE) == 0)
 			avio_close(ffm->output->pb);
+		*/
+
+		fprintf(logFile, "closing files\n");
+		fflush(logFile);
+
+		fclose(file);
+		fclose(logFile);
 
 		avformat_free_context(ffm->output);
 		ffm->output = NULL;
@@ -464,9 +514,11 @@ static inline bool ffmpeg_mux_get_extra_data(struct ffmpeg_mux *ffm)
 
 static inline int open_output_file(struct ffmpeg_mux *ffm)
 {
-	AVOutputFormat *format = ffm->output->oformat;
 	int ret;
 
+	AVOutputFormat *format = ffm->output->oformat;
+
+	/*
 	if ((format->flags & AVFMT_NOFILE) == 0) {
 		ret = avio_open(&ffm->output->pb, ffm->params.file,
 				AVIO_FLAG_WRITE);
@@ -476,10 +528,12 @@ static inline int open_output_file(struct ffmpeg_mux *ffm)
 			return FFM_ERROR;
 		}
 	}
+	*/
 
 	strncpy(ffm->output->filename, ffm->params.file,
 		sizeof(ffm->output->filename));
 	ffm->output->filename[sizeof(ffm->output->filename) - 1] = 0;
+
 
 	AVDictionary *dict = NULL;
 	if ((ret = av_dict_parse_string(&dict, ffm->params.muxer_settings, "=",
@@ -528,6 +582,8 @@ static int ffmpeg_mux_init_context(struct ffmpeg_mux *ffm)
 		return FFM_ERROR;
 	}
 
+
+	/*
 	ret = avformat_alloc_output_context2(&ffm->output, output_format, NULL,
 					     NULL);
 	if (ret < 0) {
@@ -535,6 +591,48 @@ static int ffmpeg_mux_init_context(struct ffmpeg_mux *ffm)
 			av_err2str(ret));
 		return FFM_ERROR;
 	}
+	*/
+
+	// ------------------ NEW CODE START
+	file = fopen("C:\\Users\\kjohnston\\custom_out.mp4", "wb");
+	logFile = fopen("C:\\Users\\kjohnston\\mux_log.txt", "w");
+
+	fprintf(logFile, "Starting to encode\n");
+	fflush(logFile);
+
+	ret = avformat_alloc_output_context2(&ffm->output, output_format, NULL, NULL);
+	if (ret < 0) {
+		fprintf(logFile, "Couldn't initialize output context: %s\n",
+			av_err2str(ret));
+		return FFM_ERROR;
+	}
+
+	uint8_t *buffer;
+	buffer = (uint8_t *)av_malloc(4096);
+
+	fprintf(logFile, "Here 1\n");
+	fflush(logFile);
+
+	ffm->output->pb = avio_alloc_context(
+		buffer,
+		4096,		// internal buffer and its size
+		1,		// write flag (1=true, 0=false)
+		NULL,		// user data, will be passed to our callback functions
+		0,		// no read
+		&IOWriteFunc,
+		&IOSeekFunc);
+	if (ffm->output->pb == NULL) {
+		fprintf(logFile, "Couldn't initialize context\n");
+		return FFM_ERROR;
+	}
+
+	fprintf(logFile, "Here 2\n");
+	fflush(logFile);
+
+	ffm->output->flags |= AVFMT_FLAG_CUSTOM_IO;
+	ffm->output->oformat = output_format;
+
+	// ------------------- NEW CODE END
 
 	ffm->output->oformat->video_codec = AV_CODEC_ID_NONE;
 	ffm->output->oformat->audio_codec = AV_CODEC_ID_NONE;
@@ -545,6 +643,7 @@ static int ffmpeg_mux_init_context(struct ffmpeg_mux *ffm)
 	}
 
 	ret = open_output_file(ffm);
+
 	if (ret != FFM_SUCCESS) {
 		free_avformat(ffm);
 		return ret;
