@@ -99,3 +99,4 @@ tags
 */**/.DS_Store
 
 build-xcode
+plugins/mac-virtual-cam/Defines.generated.h

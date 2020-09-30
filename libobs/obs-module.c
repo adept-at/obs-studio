@@ -51,6 +51,7 @@ static int load_module_exports(struct obs_module *mod, const char *path)
 	mod->unload = os_dlsym(mod->module, "obs_module_unload");
 	mod->post_load = os_dlsym(mod->module, "obs_module_post_load");
 	mod->set_locale = os_dlsym(mod->module, "obs_module_set_locale");
+	mod->send_command = os_dlsym(mod->module, "ob_module_send_command");
 	mod->free_locale = os_dlsym(mod->module, "obs_module_free_locale");
 	mod->name = os_dlsym(mod->module, "obs_module_name");
 	mod->description = os_dlsym(mod->module, "obs_module_description");

@@ -1,4 +1,4 @@
-project(obs-plugin)
+project(mac-virtual-cam)
 
 find_package(Libobs REQUIRED)
 
@@ -12,13 +12,9 @@ find_library(COREMEDIAIO CoreMediaIO)
 find_library(IOSURFACE IOSurface)
 find_library(IOKIT IOKit)
 
-set(CMAKE_PREFIX_PATH "${QTDIR}")
-find_package(Qt5Core REQUIRED)
-find_package(Qt5Widgets REQUIRED)
-
 configure_file(
 	Defines.h.in
-	../../../src/obs-plugin/Defines.generated.h
+	../../../plugins/mac-virtual-cam/Defines.generated.h
 )
 
 include_directories(${AVFOUNDATION}
@@ -29,25 +25,24 @@ include_directories(${AVFOUNDATION}
                     ${COREMEDIAIO}
                     ${COCOA}
                     ${IOSURFACE}
-                    ${LIBOBS_INCLUDE_DIR}
-                    "${LIBOBS_INCLUDE_DIR}/../UI/obs-frontend-api"
-                    ${Qt5Core_INCLUDES}
-                    ${Qt5Widgets_INCLUDES}
+					${LIBOBS_INCLUDE_DIR}
+					${CMAKE_SOURCE_DIR}/libobs
                     ./
-                    ../common)
+                    ../../common)
 
-set(obs-plugin_SOURCES
+
+set(mac-virtual-cam_SOURCES
 	Defines.generated.h
 	plugin-main.mm
 	MachServer.h
 	MachServer.mm
-	../common/MachProtocol.h)
+	../../../common/MachProtocol.h)
 
-add_library(obs-plugin MODULE
-	${obs-plugin_SOURCES}
-	${obs-plugin_HEADERS})
+add_library(mac-virtual-cam MODULE
+	${mac-virtual-cam_SOURCES}
+	${mac-virtual-cam_HEADERS})
 
-target_link_libraries(obs-plugin
+target_link_libraries(mac-virtual-cam
 	${AVFOUNDATION}
 	${COCOA}
 	${COREFOUNDATION}
@@ -57,12 +52,14 @@ target_link_libraries(obs-plugin
 	${IOSURFACE}
 	${IOKIT}
 	${LIBOBS_LIB}
-	${OBS_FRONTEND_LIB}
-	Qt5::Core
-	Qt5::Widgets)
+	)
 
-set_target_properties(obs-plugin PROPERTIES
+set_target_properties(mac-virtual-cam PROPERTIES FOLDER "plugins")
+
+set_target_properties(mac-virtual-cam PROPERTIES
 	PREFIX ""
-	OUTPUT_NAME "obs-mac-virtualcam"
+	OUTPUT_NAME "adept-mac-virtualcam"
 	COMPILE_FLAGS "-std=gnu++14 -stdlib=libc++ -fobjc-arc -fobjc-weak"
 )
+
+install_obs_plugin(mac-virtual-cam)

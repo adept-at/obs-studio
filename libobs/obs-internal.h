@@ -98,6 +98,7 @@ struct obs_module {
 	const char *(*name)(void);
 	const char *(*description)(void);
 	const char *(*author)(void);
+	const char *(*send_command)(const char *command);
 
 	struct obs_module *next;
 };
