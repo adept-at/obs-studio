@@ -51,7 +51,7 @@ target_link_libraries(mac-virtual-cam
 	${COREMEDIAIO}
 	${IOSURFACE}
 	${IOKIT}
-	${LIBOBS_LIB}
+	libobs
 	)
 
 set_target_properties(mac-virtual-cam PROPERTIES FOLDER "plugins")
