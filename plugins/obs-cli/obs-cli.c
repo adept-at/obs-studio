@@ -31,10 +31,14 @@ static bool socket_ready = false;
 static SOCKET sock = INVALID_SOCKET;
 #endif
 
-static obs_output_t *fileOutput = NULL;
+// The three primary sources: audio, desktop, and webcam
 static obs_source_t *audioSource = NULL;
 static obs_source_t *displaySource = NULL;
 static obs_source_t *webcamSource = NULL;
+
+// Output file for recordings
+static obs_output_t *fileOutput = NULL;
+
 static obs_encoder_t *encoder = NULL;
 static obs_encoder_t *audioEncoder = NULL;
 static obs_scene_t *scene = NULL;
@@ -43,6 +47,9 @@ static int s_output_width = 0;
 static int s_output_height = 0;
 static bool s_raw_output_active = false;
 
+// Array of scenes
+static obs_scene_t **sceneList = NULL;
+static int numScenes = 0;
 
 // We write to stdout when we get certain events from
 // obs and callbacks are not threadsafe, so we coordinate writes.
@@ -56,31 +63,33 @@ static void null_log_handler(int log_level, const char *format, va_list args,
 static void connect_to_local(int port)
 {
 #ifndef _WIN64
-    socket_ready = false;
- 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
- 	if (sockfd < 0) {
-        fprintf(stderr, "ERROR opening socket: %d\n", errno);
-        return;
+	socket_ready = false;
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		fprintf(stderr, "ERROR opening socket: %d\n", errno);
+		return;
 	}
 
 	struct sockaddr_in serv_addr;
-	bzero((char *) &serv_addr, sizeof(serv_addr));
+	bzero((char *)&serv_addr, sizeof(serv_addr));
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_port = htons(port);
-	serv_addr.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
+	serv_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
-    fprintf(stderr, "Connecting to localhost %d ...\n", port);
-    
-	if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(struct sockaddr_in)) < 0) {
-        fprintf(stderr, "ERROR connecting to port %d: %d\n", port, errno);
-        close(sockfd);
-        sockfd = -1;
+	fprintf(stderr, "Connecting to localhost %d ...\n", port);
+
+	if (connect(sockfd, (struct sockaddr *)&serv_addr,
+		    sizeof(struct sockaddr_in)) < 0) {
+		fprintf(stderr, "ERROR connecting to port %d: %d\n", port,
+			errno);
+		close(sockfd);
+		sockfd = -1;
 	}
-    
-    fprintf(stderr, "Connected!\n");
 
-    socket_ready = true;
-    
+	fprintf(stderr, "Connected!\n");
+
+	socket_ready = true;
+
 #else
 	int iResult = 0;
 
@@ -126,7 +135,7 @@ static void disconnect_from_local()
 {
 #ifndef _WIN64
 	if (sockfd != -1) {
-        fprintf(stderr, "Closing socket\n");
+		fprintf(stderr, "Closing socket\n");
 		close(sockfd);
 		sockfd = -1;
 	}
@@ -150,11 +159,10 @@ static void receive_video(void *param, struct video_data *frame)
 	if (sockfd == -1 || !socket_ready) {
 		return;
 	}
-    
-	write(sockfd,frame->data[0], frame_size);
+
+	write(sockfd, frame->data[0], frame_size);
 #else
-	if (sock == INVALID_SOCKET)
-	{
+	if (sock == INVALID_SOCKET) {
 		return;
 	}
 
@@ -247,7 +255,6 @@ static int initialize(json_t *obj)
 	obs_load_all_modules();
 	obs_post_load_modules();
 	blog(LOG_INFO, "Done loading modules");
-
 
 #ifndef _WIN64
 	displaySource = obs_source_create("display_capture", "Display Capture",
@@ -449,38 +456,40 @@ static int initializeSingleVideoRecording(json_t *obj)
 		const char *deviceId = json_string_value(deviceIdObj);
 		obs_data_t *settings = obs_data_create();
 
-
 #ifndef _WIN64
-        // osx wants json obj for resolution
-        char resolution[128];
-        sprintf(resolution, "{ \"width\": %d, \"height\": %d }", inputWidth, inputHeight);
-        
-        json_t *numeratorObj = json_object_get(obj, "fpsNumerator");
-        if (!json_is_number(numeratorObj)) {
-            fprintf(stderr, "error: fpsNum is not a number\n");
-            return 0;
-        }
-        int numerator = json_integer_value(numeratorObj);
-        
-        json_t *denominatorObj = json_object_get(obj, "fpsDenominator");
-        if (!json_is_number(denominatorObj)) {
-            fprintf(stderr, "error: denominatorObj is not a number\n");
-            return 0;
-        }
-        int denominator = json_integer_value(denominatorObj);
-        
+		// osx wants json obj for resolution
+		char resolution[128];
+		sprintf(resolution, "{ \"width\": %d, \"height\": %d }",
+			inputWidth, inputHeight);
+
+		json_t *numeratorObj = json_object_get(obj, "fpsNumerator");
+		if (!json_is_number(numeratorObj)) {
+			fprintf(stderr, "error: fpsNum is not a number\n");
+			return 0;
+		}
+		int numerator = json_integer_value(numeratorObj);
+
+		json_t *denominatorObj = json_object_get(obj, "fpsDenominator");
+		if (!json_is_number(denominatorObj)) {
+			fprintf(stderr,
+				"error: denominatorObj is not a number\n");
+			return 0;
+		}
+		int denominator = json_integer_value(denominatorObj);
+
 		obs_data_set_string(settings, "device", deviceId);
-        obs_data_set_bool(settings, "use_preset", false);
-        obs_data_set_string(settings, "resolution", resolution);
-        
-        struct media_frames_per_second fps;
-        fps.numerator = numerator;
-        fps.denominator = denominator;
-        obs_data_set_frames_per_second(settings, "frame_rate", fps, NULL);
+		obs_data_set_bool(settings, "use_preset", false);
+		obs_data_set_string(settings, "resolution", resolution);
+
+		struct media_frames_per_second fps;
+		fps.numerator = numerator;
+		fps.denominator = denominator;
+		obs_data_set_frames_per_second(settings, "frame_rate", fps,
+					       NULL);
 #else
-        char resolution[32];
-        sprintf(resolution, "%dx%d", inputWidth, inputHeight);
-        
+		char resolution[32];
+		sprintf(resolution, "%dx%d", inputWidth, inputHeight);
+
 		obs_data_set_string(settings, "video_device_id", deviceId);
 		obs_data_set_string(settings, "resolution", resolution);
 		// Custom resolution
@@ -496,6 +505,188 @@ static int initializeSingleVideoRecording(json_t *obj)
 		blog(LOG_ERROR, "Unknown device type: %s", deviceType);
 		return 1;
 	}
+
+	struct obs_video_info ovi;
+	ovi.adapter = 0;
+	ovi.gpu_conversion = false;
+#ifndef _WIN64
+	ovi.graphics_module = "libobs-opengl";
+#else
+	ovi.graphics_module = "libobs-d3d11";
+#endif
+	ovi.fps_num = 30000;
+	ovi.fps_den = 1000;
+	ovi.base_width = inputWidth;
+	ovi.base_height = inputHeight;
+	ovi.output_width = outputWidth;
+	ovi.output_height = outputHeight;
+	ovi.output_format = VIDEO_FORMAT_RGBA;
+	ovi.scale_type = OBS_SCALE_BILINEAR;
+
+	// Make sure to remove listener so that video is not considered active
+	if (s_raw_output_active) {
+		obs_remove_raw_video_callback(receive_video, NULL);
+		s_raw_output_active = false;
+	}
+
+	blog(LOG_INFO, "Resetting video");
+	int rc = obs_reset_video(&ovi);
+	blog(LOG_INFO, "Result: %d", rc);
+
+	// Now add raw video callback
+	struct video_scale_info info = {0};
+	info.format = VIDEO_FORMAT_RGBA;
+	info.width = s_output_width;
+	info.height = s_output_height;
+	obs_add_raw_video_callback(&info, receive_video, NULL);
+	s_raw_output_active = true;
+
+	return 0;
+}
+
+static const int initializeDisplay(json_t *obj)
+{
+	blog(LOG_INFO, "initializing display");
+	json_t *displayNumObj = json_object_get(obj, "displayNum");
+	if (!json_is_integer(displayNumObj)) {
+		fprintf(stderr, "error: displayNum is not an integer\n");
+		return 1;
+	}
+	int displayNum = json_integer_value(displayNumObj);
+
+	obs_data_t *displaySettings = obs_data_create();
+
+#ifndef _WIN64
+	obs_data_set_int(displaySettings, "display", displayNum);
+#else
+	obs_data_set_int(displaySettings, "monitor", displayNum);
+#endif
+
+	obs_source_update(displaySource, displaySettings);
+
+	blog(LOG_INFO, "Set display to %d", displayNum);
+
+	return 0;
+}
+
+static const int initializeWebcam(json_t *obj)
+{
+	blog(LOG_INFO, "initializing webcam");
+
+	json_t *inputWidthObj = json_object_get(obj, "inputWidth");
+	if (!json_is_integer(inputWidthObj)) {
+		fprintf(stderr, "error: inputWidth is not an integer\n");
+		return 1;
+	}
+	int inputWidth = json_integer_value(inputWidthObj);
+
+	json_t *inputHeightObj = json_object_get(obj, "inputHeight");
+	if (!json_is_integer(inputHeightObj)) {
+		fprintf(stderr, "error: inputHeight is not an integer\n");
+		return 1;
+	}
+	int inputHeight = json_integer_value(inputHeightObj);
+
+	json_t *deviceIdObj = json_object_get(obj, "deviceId");
+	if (!json_is_string(deviceIdObj)) {
+		fprintf(stderr, "error: deviceIdObj is not a string\n");
+		return 0;
+	}
+
+	const char *deviceId = json_string_value(deviceIdObj);
+	obs_data_t *settings = obs_data_create();
+
+#ifndef _WIN64
+	// osx wants json obj for resolution
+	char resolution[128];
+	sprintf(resolution, "{ \"width\": %d, \"height\": %d }", inputWidth,
+		inputHeight);
+
+	json_t *numeratorObj = json_object_get(obj, "fpsNumerator");
+	if (!json_is_number(numeratorObj)) {
+		fprintf(stderr, "error: fpsNum is not a number\n");
+		return 0;
+	}
+	int numerator = json_integer_value(numeratorObj);
+
+	json_t *denominatorObj = json_object_get(obj, "fpsDenominator");
+	if (!json_is_number(denominatorObj)) {
+		fprintf(stderr, "error: denominatorObj is not a number\n");
+		return 0;
+	}
+	int denominator = json_integer_value(denominatorObj);
+
+	obs_data_set_string(settings, "device", deviceId);
+	obs_data_set_bool(settings, "use_preset", false);
+	obs_data_set_string(settings, "resolution", resolution);
+
+	struct media_frames_per_second fps;
+	fps.numerator = numerator;
+	fps.denominator = denominator;
+	obs_data_set_frames_per_second(settings, "frame_rate", fps, NULL);
+#else
+	char resolution[32];
+	sprintf(resolution, "%dx%d", inputWidth, inputHeight);
+
+	obs_data_set_string(settings, "video_device_id", deviceId);
+	obs_data_set_string(settings, "resolution", resolution);
+	// Custom resolution
+	obs_data_set_int(settings, "res_type", 1);
+#endif
+
+	obs_source_update(webcamSource, settings);
+
+	blog(LOG_INFO, "Set webcam to %s", deviceId);
+
+	return 0;
+}
+
+// Get recording ready to go - but with no scenes or sources
+static int initializeRecording(json_t *obj)
+{
+	blog(LOG_INFO, "In initializeRecording");
+
+	json_t *inputWidthObj = json_object_get(obj, "inputWidth");
+	if (!json_is_integer(inputWidthObj)) {
+		fprintf(stderr, "error: inputWidth is not an integer\n");
+		return 1;
+	}
+	int inputWidth = json_integer_value(inputWidthObj);
+
+	json_t *inputHeightObj = json_object_get(obj, "inputHeight");
+	if (!json_is_integer(inputHeightObj)) {
+		fprintf(stderr, "error: inputHeight is not an integer\n");
+		return 1;
+	}
+	int inputHeight = json_integer_value(inputHeightObj);
+
+	json_t *outputWidthObj = json_object_get(obj, "outputWidth");
+	if (!json_is_integer(outputWidthObj)) {
+		fprintf(stderr, "error: outputWidth is not an integer\n");
+		return 1;
+	}
+	int outputWidth = json_integer_value(outputWidthObj);
+
+	json_t *outputHeightObj = json_object_get(obj, "outputHeight");
+	if (!json_is_integer(outputHeightObj)) {
+		fprintf(stderr, "error: outputHeight is not an integer\n");
+		return 1;
+	}
+	int outputHeight = json_integer_value(outputHeightObj);
+
+	json_t *scaledWidthObj = json_object_get(obj, "scaledWidth");
+	if (!json_is_integer(scaledWidthObj)) {
+		fprintf(stderr, "error: scaledWidth is not an integer\n");
+		return 1;
+	}
+	s_output_width = json_integer_value(scaledWidthObj);
+
+	json_t *scaledHeightObj = json_object_get(obj, "scaledHeight");
+	if (!json_is_integer(scaledHeightObj)) {
+		fprintf(stderr, "error: scaledHeight is not an integer\n");
+		return 1;
+	}
+	s_output_height = json_integer_value(scaledHeightObj);
 
 	struct obs_video_info ovi;
 	ovi.adapter = 0;
@@ -555,7 +746,8 @@ static const int initializeAudio(json_t *command)
 	obs_data_set_string(settings, "device_id", deviceId);
 	obs_source_update(audioSource, settings);
 
-	obs_source_set_sync_offset(audioSource, (int64_t)syncOffSetMs * (int64_t) 1000000);
+	obs_source_set_sync_offset(audioSource,
+				   (int64_t)syncOffSetMs * (int64_t)1000000);
 
 	blog(LOG_INFO, "Set audio to %s", deviceId);
 
@@ -571,8 +763,8 @@ static const int setAudioDelay(json_t *command)
 	}
 	int audioDelayMs = json_integer_value(syncOffsetMsObj);
 
-
-	obs_source_set_sync_offset(audioSource, (int64_t)audioDelayMs * (int64_t)1000000);
+	obs_source_set_sync_offset(audioSource,
+				   (int64_t)audioDelayMs * (int64_t)1000000);
 
 	blog(LOG_INFO, "Set audio delay to %d ms", audioDelayMs);
 
@@ -692,6 +884,148 @@ static void list_display_devices(json_t *returnObj)
 	json_object_set_new(returnObj, "devices", deviceList);
 }
 
+static int initializeScenes(json_t *obj)
+{
+	blog(LOG_INFO, "In initializeScenes");
+
+	// Delete any existing scenes
+	for (int i = 0; i < numScenes; i++) {
+		obs_scene_release(sceneList[i]);
+	}
+	bfree(sceneList);
+	sceneList = NULL;
+
+	json_t *scenes = json_object_get(obj, "scenes");
+	numScenes = json_array_size(scenes);
+
+	sceneList = bmalloc(sizeof(obs_scene_t *) * numScenes);
+	for (int i = 0; i < numScenes; i++) {
+		char *sceneName = malloc(sizeof(char) * 10);
+		sprintf(sceneName, "Scene_%d", i);
+		obs_scene_t *scene = obs_scene_create(sceneName);
+
+		json_t *sceneInfo = json_array_get(scenes, i);
+
+		json_t *sources = json_object_get(sceneInfo, "itemSources");
+		int numSources = json_array_size(sources);
+
+		for (int j = 0; j < numSources; j++) {
+			json_t *itemSourceInfo = json_array_get(sources, j);
+
+			json_t *sourceTypeObj =
+				json_object_get(itemSourceInfo, "type");
+			const char *sourceType =
+				json_string_value(sourceTypeObj);
+
+			int cropLeft = 0;
+			int cropRight = 0;
+			int cropTop = 0;
+			int cropBottom = 0;
+			int x = 0;
+			int y = 0;
+			float scaleX = 1.0;
+			float scaleY = 1.0;
+
+			json_t *cropLeftObj =
+				json_object_get(itemSourceInfo, "cropLeft");
+			if (cropLeftObj) {
+				cropLeft = json_integer_value(cropLeftObj);
+			}
+			json_t *cropRightObj =
+				json_object_get(itemSourceInfo, "cropRight");
+			if (cropRightObj) {
+				cropRight = json_integer_value(cropRightObj);
+			}
+			json_t *cropTopObj =
+				json_object_get(itemSourceInfo, "cropTop");
+			if (cropTopObj) {
+				cropTop = json_integer_value(cropTopObj);
+			}
+			json_t *cropBottomObj =
+				json_object_get(itemSourceInfo, "cropBottom");
+			if (cropBottomObj) {
+				cropBottom = json_integer_value(cropBottomObj);
+			}
+			json_t *posXObj =
+				json_object_get(itemSourceInfo, "x");
+			if (posXObj) {
+				x = json_integer_value(posXObj);
+			}
+			json_t *posYObj = json_object_get(itemSourceInfo, "y");
+			if (posYObj) {
+				y = json_integer_value(posYObj);
+			}
+			json_t *scaleXObj = json_object_get(itemSourceInfo, "scaleX");
+			if (scaleXObj) {
+				scaleX = json_real_value(scaleXObj);
+			}
+			json_t *scaleYObj =
+				json_object_get(itemSourceInfo, "scaleY");
+			if (scaleYObj) {
+				scaleY = json_real_value(scaleYObj);
+			}
+
+			struct obs_scene_item *item = NULL;
+
+			if (strncmp(sourceType, "webcam", 6) == 0) {
+				item = obs_scene_add(scene, webcamSource);
+				if (item == NULL) {
+					blog(LOG_ERROR,
+					     "Could not add scene item");
+					continue;
+				} else {
+					blog(LOG_INFO, "Added webcam to scene");
+				}
+			} else if (strncmp(sourceType, "monitor", 7) == 0) {
+				item = obs_scene_add(scene, displaySource);
+				if (item == NULL) {
+					blog(LOG_ERROR,
+					     "Could not add monitor item");
+					continue;
+				} else {
+					blog(LOG_INFO,
+					     "Added monitor to scene");
+				}
+			} else if (strncmp(sourceType, "microphone", 10) == 0) {
+				item = obs_scene_add(scene, audioSource);
+
+				if (item == NULL) {
+					blog(LOG_ERROR,
+					     "Could not add microphone item");
+					continue;
+				} else {
+					blog(LOG_INFO,
+					     "Added microphone to scene");
+				}
+			}
+
+			item->crop.left = cropLeft;
+			item->crop.top = cropTop;
+			item->crop.right = cropRight;
+			item->crop.bottom = cropBottom;
+			item->pos.x = x;
+			item->pos.y = y;
+			item->scale.x = scaleX;
+			item->scale.y = scaleY;
+			obs_sceneitem_force_update_transform(item);
+		}
+	}
+
+	return 0;
+}
+
+static int switchToScene(json_t *command)
+{
+	int sceneNum = 0;
+
+	json_t *sceneNumObj = json_object_get(command, "sceneNum");
+	if (sceneNumObj) {
+		sceneNum = json_integer_value(sceneNum);
+	}
+
+	obs_set_output_source(0, obs_scene_get_source(sceneList[sceneNum]));
+}
+
 static const json_t *parse_command(json_t *command)
 {
 	json_t *returnObj = json_object();
@@ -736,8 +1070,7 @@ static const json_t *parse_command(json_t *command)
 		if (setAudioDelay(command) != 0) {
 			fprintf(stderr, "Failed to set audio delay");
 		}
-	}
-	else if (strcmp(action, "startRecording") == 0) {
+	} else if (strcmp(action, "startRecording") == 0) {
 		fprintf(stderr, "Starting recording");
 		startRecording(command);
 	} else if (strcmp(action, "pauseRecording") == 0) {
@@ -783,6 +1116,16 @@ static const json_t *parse_command(json_t *command)
 		}
 	} else if (strcmp(action, "stopRenderFramesPipe") == 0) {
 		disconnect_from_local();
+	} else if (strcmp(action, "initializeStreaming") == 0) {
+		fprintf(stderr, "initializeScenes");
+		if (initializeScenes(command) != 0) {
+			fprintf(stderr, "Failed to initialize scenes");
+		}
+	} else if (strcmp(action, "switchToScene") == 0) {
+		fprintf(stderr, "switchToScene");
+		if (switchToScene(command) != 0) {
+			fprintf(stderr, "Failed to switch scenes");
+		}
 	} else {
 		fprintf(stderr, "Unrecognized action: %s", action);
 	}
@@ -848,7 +1191,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-    printf("Exiting\n");
-    
+	printf("Exiting\n");
+
 	return 0;
 }
