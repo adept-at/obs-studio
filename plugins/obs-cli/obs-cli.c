@@ -898,6 +898,8 @@ static int initializeScenes(json_t *obj)
 	json_t *scenes = json_object_get(obj, "scenes");
 	numScenes = json_array_size(scenes);
 
+	blog(LOG_INFO, "Creating scenes");
+
 	sceneList = bmalloc(sizeof(obs_scene_t *) * numScenes);
 	for (int i = 0; i < numScenes; i++) {
 		char *sceneName = malloc(sizeof(char) * 10);
@@ -910,6 +912,8 @@ static int initializeScenes(json_t *obj)
 
 		json_t *sources = json_object_get(sceneInfo, "itemSources");
 		int numSources = json_array_size(sources);
+
+		blog(LOG_INFO, "Found %d sources", numSources);
 
 		for (int j = 0; j < numSources; j++) {
 			json_t *itemSourceInfo = json_array_get(sources, j);
@@ -960,11 +964,19 @@ static int initializeScenes(json_t *obj)
 			json_t *scaleXObj = json_object_get(itemSourceInfo, "scaleX");
 			if (scaleXObj) {
 				scaleX = json_real_value(scaleXObj);
+
+				if (scaleX == 0) {
+					scaleX = (float) json_integer_value(scaleXObj);
+				}
 			}
 			json_t *scaleYObj =
 				json_object_get(itemSourceInfo, "scaleY");
 			if (scaleYObj) {
 				scaleY = json_real_value(scaleYObj);
+
+				if (scaleY == 0) {
+					scaleY = (float) json_integer_value(scaleYObj);
+				}
 			}
 
 			struct obs_scene_item *item = NULL;
@@ -980,7 +992,7 @@ static int initializeScenes(json_t *obj)
 				} else {
 					blog(LOG_INFO, "Added webcam to scene");
 				}
-			} else if (strncmp(sourceType, "monitor", 7) == 0) {
+			} else if (strncmp(sourceType, "display", 7) == 0) {
 				item = obs_scene_add(scene, displaySource);
 				if (item == NULL) {
 					blog(LOG_ERROR,
@@ -1001,10 +1013,18 @@ static int initializeScenes(json_t *obj)
 					blog(LOG_INFO,
 					     "Added microphone to scene");
 				}
+			} else {
+					blog(LOG_ERROR, "Unknown type: %s", sourceType);
+					continue;
 			}
+
+			blog(LOG_INFO, "Checking for transform\n");
 
 			if (needsTransform)
 			{
+				blog(LOG_INFO, "ScaleX: %f\n", scaleX);
+				blog(LOG_INFO, "ScaleY: %f\n", scaleY);
+
 			    item->crop.left = cropLeft;
 			    item->crop.top = cropTop;
 			    item->crop.right = cropRight;
@@ -1015,6 +1035,11 @@ static int initializeScenes(json_t *obj)
 			    item->scale.y = scaleY;
 			    obs_sceneitem_force_update_transform(item);
 			}
+			else
+			{
+				blog(LOG_INFO, "No transform needed\n");
+			}
+
 		}
 	}
 
