@@ -904,6 +904,8 @@ static int initializeScenes(json_t *obj)
 		sprintf(sceneName, "Scene_%d", i);
 		obs_scene_t *scene = obs_scene_create(sceneName);
 
+		sceneList[i] = scene;
+
 		json_t *sceneInfo = json_array_get(scenes, i);
 
 		json_t *sources = json_object_get(sceneInfo, "itemSources");
@@ -967,6 +969,8 @@ static int initializeScenes(json_t *obj)
 
 			struct obs_scene_item *item = NULL;
 
+			bool needsTransform = true;
+
 			if (strncmp(sourceType, "webcam", 6) == 0) {
 				item = obs_scene_add(scene, webcamSource);
 				if (item == NULL) {
@@ -988,7 +992,7 @@ static int initializeScenes(json_t *obj)
 				}
 			} else if (strncmp(sourceType, "microphone", 10) == 0) {
 				item = obs_scene_add(scene, audioSource);
-
+				needsTransform = false;
 				if (item == NULL) {
 					blog(LOG_ERROR,
 					     "Could not add microphone item");
@@ -999,17 +1003,24 @@ static int initializeScenes(json_t *obj)
 				}
 			}
 
-			item->crop.left = cropLeft;
-			item->crop.top = cropTop;
-			item->crop.right = cropRight;
-			item->crop.bottom = cropBottom;
-			item->pos.x = x;
-			item->pos.y = y;
-			item->scale.x = scaleX;
-			item->scale.y = scaleY;
-			obs_sceneitem_force_update_transform(item);
+			if (needsTransform)
+			{
+			    item->crop.left = cropLeft;
+			    item->crop.top = cropTop;
+			    item->crop.right = cropRight;
+			    item->crop.bottom = cropBottom;
+			    item->pos.x = x;
+			    item->pos.y = y;
+			    item->scale.x = scaleX;
+			    item->scale.y = scaleY;
+			    obs_sceneitem_force_update_transform(item);
+			}
 		}
 	}
+
+	blog(LOG_INFO, "Setting output 0 to scene 0");
+	obs_set_output_source(0, obs_scene_get_source(sceneList[0]));
+	blog(LOG_INFO, "Set output 0 to scene 0");
 
 	return 0;
 }
@@ -1116,15 +1127,30 @@ static const json_t *parse_command(json_t *command)
 		}
 	} else if (strcmp(action, "stopRenderFramesPipe") == 0) {
 		disconnect_from_local();
-	} else if (strcmp(action, "initializeStreaming") == 0) {
+	} else if (strcmp(action, "initializeScenes") == 0) {
 		fprintf(stderr, "initializeScenes");
 		if (initializeScenes(command) != 0) {
 			fprintf(stderr, "Failed to initialize scenes");
+		}
+	} else if (strcmp(action, "initializeRecording") == 0) {
+		fprintf(stderr, "initializeRecording");
+		if (initializeRecording(command) != 0) {
+			fprintf(stderr, "Failed to initialize recording");
 		}
 	} else if (strcmp(action, "switchToScene") == 0) {
 		fprintf(stderr, "switchToScene");
 		if (switchToScene(command) != 0) {
 			fprintf(stderr, "Failed to switch scenes");
+		}
+	} else if (strcmp(action, "initializeWebcam") == 0) {
+		fprintf(stderr, "initializeWebcam");
+		if (initializeWebcam(command) != 0) {
+			fprintf(stderr, "Failed to initialize webcam");
+		}
+	} else if (strcmp(action, "initializeDisplay") == 0) {
+		fprintf(stderr, "initializeDisplay");
+		if (initializeDisplay(command) != 0) {
+			fprintf(stderr, "Failed to initialize display");
 		}
 	} else {
 		fprintf(stderr, "Unrecognized action: %s", action);
