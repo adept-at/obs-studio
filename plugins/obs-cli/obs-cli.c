@@ -791,8 +791,11 @@ static const int startRecording(json_t *command)
 
 	obs_set_output_source(1, audioSource);
 
-	encoder = obs_video_encoder_create("obs_x264", "simple_h264_recording",
-					   NULL, NULL);
+	// TODO - make this configurable
+	// obs_data_t *encoderSettings= obs_data_create();
+	// obs_data_set_string(encoderSettings, "rate_control", "CBR");
+
+	encoder = obs_video_encoder_create("obs_x264", "simple_h264_recording", NULL, NULL);
 	if (!encoder) {
 		blog(LOG_ERROR, "ERROR MAKING ENCODER");
 		return 1;
