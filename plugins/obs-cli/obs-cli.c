@@ -45,6 +45,11 @@ static obs_scene_t *scene = NULL;
 
 static int s_output_width = 0;
 static int s_output_height = 0;
+static int s_output_slice_x = 0;
+static int s_output_slice_y = 0;
+static int s_output_slice_width = 0;
+static int s_output_slice_height = 0;
+static uint8_t* s_output_slice_buffer = NULL;
 static bool s_raw_output_active = false;
 
 // Array of scenes
@@ -155,12 +160,43 @@ static void receive_video(void *param, struct video_data *frame)
 		return;
 	}
 
+	// If we are only sending back a slice, copy slice into buffer
+	if (s_output_slice_buffer) {
+		for (int i=0;i < s_output_slice_height; i++) {
+			for (int j=0;j < s_output_slice_width;j++) {
+				for (int k=0;k < 4; k++) {
+					int yOffset = (s_output_slice_y + i) * s_output_width * 4;
+					int xOffset = (s_output_slice_x + j) * 4;
+					int source = yOffset + xOffset + k;
+					int dest = ((i * s_output_slice_width + j) * 4) + k;
+
+					s_output_slice_buffer[dest] = frame->data[0][source];
+				}
+			}
+		}
+	}
+
 #ifndef _WIN64
 	if (sockfd == -1 || !socket_ready) {
 		return;
 	}
 
-	write(sockfd, frame->data[0], frame_size);
+	int bytesToWrite = frame_size;
+	if (s_output_slice_buffer) {
+		bytesToWrite = s_output_slice_height * s_output_slice_width * 4;
+	}
+
+	ssize_t bytesWritten = 0;
+
+	if (s_output_slice_buffer) {
+		bytesWritten = write(sockfd, s_output_slice_buffer, bytesToWrite);
+	} else {
+		bytesWritten = write(sockfd, frame->data[0], bytesToWrite);
+	}
+
+	if (bytesWritten != frame_size) {
+		disconnect_from_local;
+	}
 #else
 	if (sock == INVALID_SOCKET) {
 		return;
@@ -687,6 +723,39 @@ static int initializeRecording(json_t *obj)
 		return 1;
 	}
 	s_output_height = json_integer_value(scaledHeightObj);
+
+	// Optional params to return only a slice of the scaled output
+	// Used when returning just the webcam portion of the scene
+	s_output_slice_width = -1;
+	s_output_slice_height = -1;
+	s_output_slice_x = -1;
+	s_output_slice_y = -1;
+	if (s_output_slice_buffer) {
+		free(s_output_slice_buffer);
+		s_output_slice_buffer = NULL;
+	}
+	json_t *scaledSliceWidth = json_object_get(obj, "scaledSliceWidth");
+	if (json_is_integer(scaledSliceWidth)) {
+		s_output_slice_width = json_integer_value(scaledSliceWidth);
+	}
+	json_t *scaledSliceHeight = json_object_get(obj, "scaledSliceHeight");
+	if (json_is_integer(scaledSliceHeight)) {
+		s_output_slice_height = json_integer_value(scaledSliceHeight);
+	}
+	json_t *scaledSliceX = json_object_get(obj, "scaledSliceX");
+	if (json_is_integer(scaledSliceX)) {
+		s_output_slice_x = json_integer_value(scaledSliceX);
+	}
+	json_t *scaledSliceY = json_object_get(obj, "scaledSliceY");
+	if (json_is_integer(scaledSliceY)) {
+		s_output_slice_y = json_integer_value(scaledSliceY);
+	}
+
+	// If we are going to output just a slice, allocate buffer now
+	if (s_output_slice_width > 0) {
+		fprintf(stderr, "USING SLICE BUFFER\n");
+		s_output_slice_buffer = malloc(sizeof(uint8_t) * 4 * s_output_slice_width * s_output_slice_height);
+	}
 
 	struct obs_video_info ovi;
 	ovi.adapter = 0;
