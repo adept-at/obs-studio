@@ -163,16 +163,10 @@ static void receive_video(void *param, struct video_data *frame)
 	// If we are only sending back a slice, copy slice into buffer
 	if (s_output_slice_buffer) {
 		for (int i=0;i < s_output_slice_height; i++) {
-			for (int j=0;j < s_output_slice_width;j++) {
-				for (int k=0;k < 4; k++) {
-					int yOffset = (s_output_slice_y + i) * s_output_width * 4;
-					int xOffset = (s_output_slice_x + j) * 4;
-					int source = yOffset + xOffset + k;
-					int dest = ((i * s_output_slice_width + j) * 4) + k;
-
-					s_output_slice_buffer[dest] = frame->data[0][source];
-				}
-			}
+			int sourceOffset = ((s_output_slice_y + i) * s_output_width + s_output_slice_x) * 4;
+			int destOffset = (i * s_output_slice_width) * 4;
+			int numBytesToCopy = s_output_slice_width * 4;
+			memcpy(s_output_slice_buffer + destOffset, frame->data[0] + sourceOffset, numBytesToCopy);
 		}
 	}
 
