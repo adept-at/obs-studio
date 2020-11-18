@@ -653,7 +653,15 @@ static json_t *av_get_device_list(void* capture)
 
 		blog(LOG_INFO, "DisplayID: %u", display_id);
 
+		NSRect screenRect;
+		screenRect = [screen frame];
+
+		CGFloat scaleFactor = [screen backingScaleFactor];
+
 		json_object_set_new(obj, "deviceId", json_integer(display_id));
+		json_object_set_new(obj, "width", json_integer(screenRect.size.width));
+		json_object_set_new(obj, "height", json_integer(screenRect.size.height));
+		json_object_set_new(obj, "scaleFactor", json_real(scaleFactor));
 	}
 
 	return array;

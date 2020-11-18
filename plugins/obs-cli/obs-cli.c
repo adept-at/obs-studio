@@ -45,6 +45,11 @@ static obs_scene_t *scene = NULL;
 
 static int s_output_width = 0;
 static int s_output_height = 0;
+static int s_output_slice_x = 0;
+static int s_output_slice_y = 0;
+static int s_output_slice_width = 0;
+static int s_output_slice_height = 0;
+static uint8_t* s_output_slice_buffer = NULL;
 static bool s_raw_output_active = false;
 
 // Array of scenes
@@ -155,12 +160,37 @@ static void receive_video(void *param, struct video_data *frame)
 		return;
 	}
 
+	// If we are only sending back a slice, copy slice into buffer
+	if (s_output_slice_buffer) {
+		for (int i=0;i < s_output_slice_height; i++) {
+			int sourceOffset = ((s_output_slice_y + i) * s_output_width + s_output_slice_x) * 4;
+			int destOffset = (i * s_output_slice_width) * 4;
+			int numBytesToCopy = s_output_slice_width * 4;
+			memcpy(s_output_slice_buffer + destOffset, frame->data[0] + sourceOffset, numBytesToCopy);
+		}
+	}
+
 #ifndef _WIN64
 	if (sockfd == -1 || !socket_ready) {
 		return;
 	}
 
-	write(sockfd, frame->data[0], frame_size);
+	int bytesToWrite = frame_size;
+	if (s_output_slice_buffer) {
+		bytesToWrite = s_output_slice_height * s_output_slice_width * 4;
+	}
+
+	ssize_t bytesWritten = 0;
+
+	if (s_output_slice_buffer) {
+		bytesWritten = write(sockfd, s_output_slice_buffer, bytesToWrite);
+	} else {
+		bytesWritten = write(sockfd, frame->data[0], bytesToWrite);
+	}
+
+	if (bytesWritten != frame_size) {
+		disconnect_from_local;
+	}
 #else
 	if (sock == INVALID_SOCKET) {
 		return;
@@ -688,6 +718,39 @@ static int initializeRecording(json_t *obj)
 	}
 	s_output_height = json_integer_value(scaledHeightObj);
 
+	// Optional params to return only a slice of the scaled output
+	// Used when returning just the webcam portion of the scene
+	s_output_slice_width = -1;
+	s_output_slice_height = -1;
+	s_output_slice_x = -1;
+	s_output_slice_y = -1;
+	if (s_output_slice_buffer) {
+		free(s_output_slice_buffer);
+		s_output_slice_buffer = NULL;
+	}
+	json_t *scaledSliceWidth = json_object_get(obj, "scaledSliceWidth");
+	if (json_is_integer(scaledSliceWidth)) {
+		s_output_slice_width = json_integer_value(scaledSliceWidth);
+	}
+	json_t *scaledSliceHeight = json_object_get(obj, "scaledSliceHeight");
+	if (json_is_integer(scaledSliceHeight)) {
+		s_output_slice_height = json_integer_value(scaledSliceHeight);
+	}
+	json_t *scaledSliceX = json_object_get(obj, "scaledSliceX");
+	if (json_is_integer(scaledSliceX)) {
+		s_output_slice_x = json_integer_value(scaledSliceX);
+	}
+	json_t *scaledSliceY = json_object_get(obj, "scaledSliceY");
+	if (json_is_integer(scaledSliceY)) {
+		s_output_slice_y = json_integer_value(scaledSliceY);
+	}
+
+	// If we are going to output just a slice, allocate buffer now
+	if (s_output_slice_width > 0) {
+		fprintf(stderr, "USING SLICE BUFFER\n");
+		s_output_slice_buffer = malloc(sizeof(uint8_t) * 4 * s_output_slice_width * s_output_slice_height);
+	}
+
 	struct obs_video_info ovi;
 	ovi.adapter = 0;
 	ovi.gpu_conversion = false;
@@ -791,8 +854,11 @@ static const int startRecording(json_t *command)
 
 	obs_set_output_source(1, audioSource);
 
-	encoder = obs_video_encoder_create("obs_x264", "simple_h264_recording",
-					   NULL, NULL);
+	// TODO - make this configurable
+	// obs_data_t *encoderSettings= obs_data_create();
+	// obs_data_set_string(encoderSettings, "rate_control", "CBR");
+
+	encoder = obs_video_encoder_create("obs_x264", "simple_h264_recording", NULL, NULL);
 	if (!encoder) {
 		blog(LOG_ERROR, "ERROR MAKING ENCODER");
 		return 1;
@@ -898,6 +964,8 @@ static int initializeScenes(json_t *obj)
 	json_t *scenes = json_object_get(obj, "scenes");
 	numScenes = json_array_size(scenes);
 
+	blog(LOG_INFO, "Creating scenes");
+
 	sceneList = bmalloc(sizeof(obs_scene_t *) * numScenes);
 	for (int i = 0; i < numScenes; i++) {
 		char *sceneName = malloc(sizeof(char) * 10);
@@ -910,6 +978,8 @@ static int initializeScenes(json_t *obj)
 
 		json_t *sources = json_object_get(sceneInfo, "itemSources");
 		int numSources = json_array_size(sources);
+
+		blog(LOG_INFO, "Found %d sources", numSources);
 
 		for (int j = 0; j < numSources; j++) {
 			json_t *itemSourceInfo = json_array_get(sources, j);
@@ -960,11 +1030,19 @@ static int initializeScenes(json_t *obj)
 			json_t *scaleXObj = json_object_get(itemSourceInfo, "scaleX");
 			if (scaleXObj) {
 				scaleX = json_real_value(scaleXObj);
+
+				if (scaleX == 0) {
+					scaleX = (float) json_integer_value(scaleXObj);
+				}
 			}
 			json_t *scaleYObj =
 				json_object_get(itemSourceInfo, "scaleY");
 			if (scaleYObj) {
 				scaleY = json_real_value(scaleYObj);
+
+				if (scaleY == 0) {
+					scaleY = (float) json_integer_value(scaleYObj);
+				}
 			}
 
 			struct obs_scene_item *item = NULL;
@@ -980,7 +1058,7 @@ static int initializeScenes(json_t *obj)
 				} else {
 					blog(LOG_INFO, "Added webcam to scene");
 				}
-			} else if (strncmp(sourceType, "monitor", 7) == 0) {
+			} else if (strncmp(sourceType, "display", 7) == 0) {
 				item = obs_scene_add(scene, displaySource);
 				if (item == NULL) {
 					blog(LOG_ERROR,
@@ -1001,10 +1079,18 @@ static int initializeScenes(json_t *obj)
 					blog(LOG_INFO,
 					     "Added microphone to scene");
 				}
+			} else {
+					blog(LOG_ERROR, "Unknown type: %s", sourceType);
+					continue;
 			}
+
+			blog(LOG_INFO, "Checking for transform\n");
 
 			if (needsTransform)
 			{
+				blog(LOG_INFO, "ScaleX: %f\n", scaleX);
+				blog(LOG_INFO, "ScaleY: %f\n", scaleY);
+
 			    item->crop.left = cropLeft;
 			    item->crop.top = cropTop;
 			    item->crop.right = cropRight;
@@ -1015,6 +1101,11 @@ static int initializeScenes(json_t *obj)
 			    item->scale.y = scaleY;
 			    obs_sceneitem_force_update_transform(item);
 			}
+			else
+			{
+				blog(LOG_INFO, "No transform needed\n");
+			}
+
 		}
 	}
 
