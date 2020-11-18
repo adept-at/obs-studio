@@ -161,7 +161,7 @@ static void receive_video(void *param, struct video_data *frame)
 	}
 
 	// If we are only sending back a slice, copy slice into buffer
-	if (s_output_slice_buffer) {
+	if (s_output_slice_buffer != NULL) {
 		for (int i=0;i < s_output_slice_height; i++) {
 			int sourceOffset = ((s_output_slice_y + i) * s_output_width + s_output_slice_x) * 4;
 			int destOffset = (i * s_output_slice_width) * 4;
@@ -170,19 +170,19 @@ static void receive_video(void *param, struct video_data *frame)
 		}
 	}
 
-#ifndef _WIN64
-	if (sockfd == -1 || !socket_ready) {
-		return;
-	}
-
 	int bytesToWrite = frame_size;
 	if (s_output_slice_buffer) {
 		bytesToWrite = s_output_slice_height * s_output_slice_width * 4;
 	}
 
+#ifndef _WIN64
+	if (sockfd == -1 || !socket_ready) {
+		return;
+	}
+
 	ssize_t bytesWritten = 0;
 
-	if (s_output_slice_buffer) {
+	if (s_output_slice_buffer != NULL) {
 		bytesWritten = write(sockfd, s_output_slice_buffer, bytesToWrite);
 	} else {
 		bytesWritten = write(sockfd, frame->data[0], bytesToWrite);
@@ -196,7 +196,17 @@ static void receive_video(void *param, struct video_data *frame)
 		return;
 	}
 
-	send(sock, frame->data[0], frame_size, 0);
+	int bytesWritten = 0;
+
+	if (s_output_slice_buffer != NULL) {
+		bytesWritten = send(sock, s_output_slice_buffer, bytesToWrite, 0);
+	} else {
+		bytesWritten = send(sock, frame->data[0], bytesToWrite, 0);
+	}
+
+	if (bytesWritten != bytesToWrite) {
+		disconnect_from_local();
+	}
 #endif
 }
 
@@ -749,6 +759,8 @@ static int initializeRecording(json_t *obj)
 	if (s_output_slice_width > 0) {
 		fprintf(stderr, "USING SLICE BUFFER\n");
 		s_output_slice_buffer = malloc(sizeof(uint8_t) * 4 * s_output_slice_width * s_output_slice_height);
+	} else {
+		s_output_slice_buffer = NULL;
 	}
 
 	struct obs_video_info ovi;
