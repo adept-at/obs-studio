@@ -848,6 +848,8 @@ static const int setAudioDelay(json_t *command)
 
 static const int startRecording(json_t *command)
 {
+    blog(LOG_INFO, "In startRecording");
+    
 	json_t *outputFileObj = json_object_get(command, "outputFile");
 	if (!json_is_string(outputFileObj)) {
 		fprintf(stderr, "error: outputFileObj is not a string\n");
@@ -891,9 +893,11 @@ static const int startRecording(json_t *command)
 
 	blog(LOG_INFO, "Starting to record");
 	if (!obs_output_start(fileOutput)) {
-		fprintf(stderr, "Failed to start recording");
+		blog(LOG_ERROR, "Failed to start recording");
 		return 1;
 	}
+
+    blog(LOG_INFO, "Recording started");
 
 	return 0;
 }
