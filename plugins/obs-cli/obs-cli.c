@@ -66,7 +66,7 @@ static void null_log_handler(int log_level, const char *format, va_list args,
 }
 
 static void connect_to_local(int port)
-{
+	{
 #ifndef _WIN64
 	socket_ready = false;
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -96,6 +96,8 @@ static void connect_to_local(int port)
 	socket_ready = true;
 
 #else
+	printf("Connecting to %d\n", port);
+
 	int iResult = 0;
 
 	WSADATA wsaData = {0};
@@ -208,6 +210,28 @@ static void receive_video(void *param, struct video_data *frame)
 		disconnect_from_local();
 	}
 #endif
+}
+
+static void stop_raw_output()
+{
+	if (s_raw_output_active)
+	{
+		obs_remove_raw_video_callback(receive_video, NULL);
+		s_raw_output_active = false;
+	}
+}
+
+static void start_raw_output()
+{
+	if (!s_raw_output_active)
+	{
+		struct video_scale_info info = {0};
+		info.format = VIDEO_FORMAT_RGBA;
+		info.width = s_output_width;
+		info.height = s_output_height;
+		obs_add_raw_video_callback(&info, receive_video, NULL);
+		s_raw_output_active = true;
+	}
 }
 
 static void output_stopped(void *my_data, calldata_t *cd)
@@ -564,22 +588,14 @@ static int initializeSingleVideoRecording(json_t *obj)
 	ovi.scale_type = OBS_SCALE_BILINEAR;
 
 	// Make sure to remove listener so that video is not considered active
-	if (s_raw_output_active) {
-		obs_remove_raw_video_callback(receive_video, NULL);
-		s_raw_output_active = false;
-	}
+	stop_raw_output();
 
 	blog(LOG_INFO, "Resetting video");
 	int rc = obs_reset_video(&ovi);
 	blog(LOG_INFO, "Result: %d", rc);
 
 	// Now add raw video callback
-	struct video_scale_info info = {0};
-	info.format = VIDEO_FORMAT_RGBA;
-	info.width = s_output_width;
-	info.height = s_output_height;
-	obs_add_raw_video_callback(&info, receive_video, NULL);
-	s_raw_output_active = true;
+	start_raw_output();
 
 	return 0;
 }
@@ -1232,7 +1248,9 @@ static const json_t *parse_command(json_t *command)
 			int port = json_integer_value(portObj);
 			connect_to_local(port);
 		}
+		start_raw_output();
 	} else if (strcmp(action, "stopRenderFramesPipe") == 0) {
+		stop_raw_output();
 		disconnect_from_local();
 	} else if (strcmp(action, "initializeScenes") == 0) {
 		fprintf(stderr, "initializeScenes");
