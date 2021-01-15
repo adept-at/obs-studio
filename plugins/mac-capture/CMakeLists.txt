@@ -10,7 +10,7 @@ include_directories(${COREAUDIO}
                     ${AUDIOUNIT}
                     ${COREFOUNDATION}
 			${IOSURF}
-			${JANSSON_INCLUDE_DIRS}
+			${OBS_JANSSON_INCLUDE_DIRS}
 		    ${COCOA})
 
 set(mac-capture_HEADERS
@@ -39,6 +39,7 @@ target_link_libraries(mac-capture
 	${AUDIOUNIT}
 	${COREFOUNDATION}
 	${IOSURF}
+    ${OBS_JANSSON_IMPORT}
 	${COCOA})
 set_target_properties(mac-capture PROPERTIES FOLDER "plugins")
 

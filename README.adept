@@ -1,5 +1,14 @@
-Set the path to qt when running cmake
+git clone --recursive https://github.com/adept-at/obs-studio
 
+
+Building on OSX
+
+brew install cmake
+brew install ffmpeg
+brew install qt
 mkdir build
 cd build
-cmake .. -DCMAKE_PREFIX_PATH=/usr/local/Cellar/qt/5.13.1
+cmake .. -DCMAKE_PREFIX_PATH=/usr/local/Cellar/qt/[version]
+
+Open project in XCode
+build
