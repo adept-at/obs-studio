@@ -11,6 +11,8 @@ cp cmake_output/rundir/RelWithDebInfo/obs-plugins/* package/plugins
 rm package/bin/obs
 rm package/plugins/frontend-tools.so
 rm package/plugins/decklink-ouput-ui.so
+rm package/bin/libobs-scripting.dylib
+rm package/bin/libobs-frontend-api.dylib
 
 ../CI/install/osx/dylibBundler -b -cd -d package/libs \
 -s ./package/bin \
@@ -32,3 +34,6 @@ rm package/plugins/decklink-ouput-ui.so
 -x ./package/plugins/mac-vth264.so \
 -x ./package/plugins/obs-outputs.so \
 -x ./package/plugins/obs-x264.so
+
+# Remove duplicate libobs. Everything now uses the one in package/libs
+rm package/bin/libobs.0.dylib
