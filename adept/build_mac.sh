@@ -12,5 +12,7 @@ popd
 
 # Create zip file
 version=`cat version.txt`
-rm -f obs-libs-$version.zip 
-zip obs-libs-$version.zip -r package
+rm -f obs-libs-mac-$version.zip 
+pushd package
+zip ../obs-libs-mac-$version.zip -r *
+popd
