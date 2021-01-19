@@ -7,7 +7,7 @@ project(win-dshow)
 
 find_package(FFmpeg REQUIRED COMPONENTS avcodec avutil)
 include_directories(${FFMPEG_INCLUDE_DIRS}
-				    ${JANSSON_INCLUDE_DIRS})
+				    ${OBS_JANSSON_INCLUDE_DIRS})
 
 set(win-dshow_HEADERS
 	encode-dstr.hpp

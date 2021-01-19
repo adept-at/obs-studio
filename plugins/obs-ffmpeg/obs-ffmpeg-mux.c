@@ -234,26 +234,10 @@ static void build_command_line(struct ffmpeg_muxer *stream, struct dstr *cmd,
 		num_tracks++;
 	}
 
-	const char* DYLD_LIBRARY_PATH = getenv("DYLD_LIBRARY_PATH");
 	const char* parentDir = obs_get_executable_path();
 
 	dstr_init_copy(cmd, "");
-
-    blog(LOG_INFO, "Yo!");
-    
-	if (DYLD_LIBRARY_PATH!=NULL)
-	{
-		dstr_init_copy(cmd, "DYLD_LIBRARY_PATH=\"");
-		blog(LOG_INFO, "cmd so far: %s", cmd->array);
-		blog(LOG_INFO, "Copying in path: %s", DYLD_LIBRARY_PATH);
-		dstr_cat(cmd, DYLD_LIBRARY_PATH);
-		blog(LOG_INFO, "cmd so far: %s", cmd->array);
-
-		dstr_cat(cmd, "\" ");
-	}
-
 	blog(LOG_INFO, "cmd so far: %s", cmd->array);
-
 	dstr_cat(cmd, "\"");
 	dstr_cat(cmd, os_get_executable_path_in_dir_ptr(parentDir, FFMPEG_MUX));
 	dstr_cat(cmd, "\" \"");

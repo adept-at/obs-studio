@@ -14,7 +14,7 @@ include_directories(${AVFOUNDATION}
                     ${COREMEDIA}
                     ${COREVIDEO}
 					${COREMEDIAIO}
-					${JANSSON_INCLUDE_DIRS}
+					${OBS_JANSSON_INCLUDE_DIRS}
 		    ${COCOA})
 
 set(mac-avcapture_HEADERS
@@ -40,6 +40,7 @@ target_link_libraries(mac-avcapture
 	${COREMEDIA}
 	${COREVIDEO}
 	${COREMEDIAIO}
+	${OBS_JANSSON_IMPORT}
 	${COCOA})
 set_target_properties(mac-avcapture PROPERTIES FOLDER "plugins")
 
