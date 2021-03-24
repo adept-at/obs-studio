@@ -4,4 +4,4 @@ brew install cmake
 
 cd adept
 
-Run build_mac.sh
+Run adept/build_mac.sh
