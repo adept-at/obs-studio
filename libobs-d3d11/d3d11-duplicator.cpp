@@ -118,6 +118,11 @@ EXPORT bool device_get_duplicator_monitor_info(gs_device_t *device,
 	info->y = desc.DesktopCoordinates.top;
 	info->cx = desc.DesktopCoordinates.right - info->x;
 	info->cy = desc.DesktopCoordinates.bottom - info->y;
+	// Store monitor handle for comparison with monitor for current window when
+	// screen capturing on windows
+#ifdef _WIN32
+	info->monitorHandle = desc.Monitor;
+#endif
 
 	return true;
 }
