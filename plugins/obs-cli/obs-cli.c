@@ -17,7 +17,7 @@
 #include "util/threading.h"
 #include "obs-scene.h"
 
-#ifndef _WIN64
+#ifndef _WIN32
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -67,7 +67,7 @@ static void null_log_handler(int log_level, const char *format, va_list args,
 
 static void connect_to_local(int port)
 	{
-#ifndef _WIN64
+#ifndef _WIN32
 	socket_ready = false;
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd < 0) {
@@ -140,7 +140,7 @@ static void connect_to_local(int port)
 
 static void disconnect_from_local()
 {
-#ifndef _WIN64
+#ifndef _WIN32
 	if (sockfd != -1) {
 		fprintf(stderr, "Closing socket\n");
 		close(sockfd);
@@ -177,7 +177,7 @@ static void receive_video(void *param, struct video_data *frame)
 		bytesToWrite = s_output_slice_height * s_output_slice_width * 4;
 	}
 
-#ifndef _WIN64
+#ifndef _WIN32
 	if (sockfd == -1 || !socket_ready) {
 		return;
 	}
@@ -290,7 +290,7 @@ static int initialize(json_t *obj)
 	struct obs_video_info ovi;
 	ovi.adapter = 0;
 	ovi.gpu_conversion = false;
-#ifndef _WIN64
+#ifndef _WIN32
 	ovi.graphics_module = "libobs-opengl";
 #else
 	ovi.graphics_module = "libobs-d3d11";
@@ -320,7 +320,7 @@ static int initialize(json_t *obj)
 	obs_post_load_modules();
 	blog(LOG_INFO, "Done loading modules");
 
-#ifndef _WIN64
+#ifndef _WIN32
 	displaySource = obs_source_create("display_capture", "Display Capture",
 					  NULL, NULL);
 	if (!displaySource) {
@@ -465,7 +465,7 @@ static int initializeSingleVideoRecording(json_t *obj)
 
 		obs_data_t *displaySettings = obs_data_create();
 
-#ifndef _WIN64
+#ifndef _WIN32
 		obs_data_set_int(displaySettings, "display", displayNum);
 #else
 		obs_data_set_int(displaySettings, "monitor", displayNum);
@@ -520,7 +520,7 @@ static int initializeSingleVideoRecording(json_t *obj)
 		const char *deviceId = json_string_value(deviceIdObj);
 		obs_data_t *settings = obs_data_create();
 
-#ifndef _WIN64
+#ifndef _WIN32
 		// osx wants json obj for resolution
 		char resolution[128];
 		sprintf(resolution, "{ \"width\": %d, \"height\": %d }",
@@ -573,7 +573,7 @@ static int initializeSingleVideoRecording(json_t *obj)
 	struct obs_video_info ovi;
 	ovi.adapter = 0;
 	ovi.gpu_conversion = false;
-#ifndef _WIN64
+#ifndef _WIN32
 	ovi.graphics_module = "libobs-opengl";
 #else
 	ovi.graphics_module = "libobs-d3d11";
@@ -604,23 +604,53 @@ static const int initializeDisplay(json_t *obj)
 {
 	blog(LOG_INFO, "initializing display");
 	json_t *displayNumObj = json_object_get(obj, "displayNum");
-	if (!json_is_integer(displayNumObj)) {
-		fprintf(stderr, "error: displayNum is not an integer\n");
+
+	// Windows passes the handle to the capture window, which we will use
+	// to get the monitor, and then the display index.
+	json_t *captureWindowHandle = json_object_get(obj, "captureWindowHandle");
+
+	if (!json_is_integer(displayNumObj) && !json_is_integer(captureWindowHandle)) {
+		fprintf(stderr, "error: displayNum or captureWindowHandle must be passed in\n");
 		return 1;
 	}
-	int displayNum = json_integer_value(displayNumObj);
 
 	obs_data_t *displaySettings = obs_data_create();
 
-#ifndef _WIN64
-	obs_data_set_int(displaySettings, "display", displayNum);
+#ifdef _WIN32
+	int captureWindowHandleAsInt = json_integer_value(captureWindowHandle);
+
+	HMONITOR monitor = MonitorFromWindow((HWND)captureWindowHandleAsInt, MONITOR_DEFAULTTONEAREST);
+
+	// Get display devices
+	json_t *deviceList = obs_source_device_list(displaySource);
+
+	// Find matching monitor
+	int monitorIndex = -1;
+	int numMonitors = json_array_size(deviceList);
+	for (int i = 0; i < numMonitors; i++) {
+		json_t* monitorInfo = json_array_get(deviceList, i);
+		json_t* monitorHandle = json_object_get(monitorInfo, "monitorHandle");
+		if ((HMONITOR)json_integer_value(monitorHandle) == monitor) {
+			blog(LOG_INFO, "Found monitor index: %d", i);
+			monitorIndex = i;
+			break;
+		}
+	}
+
+	if (monitorIndex == -1) {
+		fprintf(stderr,	"error: No monitor found for window handle %d\n",captureWindowHandleAsInt);
+		return 1;
+	}
+	blog(LOG_INFO, "Set monitor to %d", monitorIndex);
+
+	obs_data_set_int(displaySettings, "monitor", monitorIndex);
 #else
-	obs_data_set_int(displaySettings, "monitor", displayNum);
+	int displayNum = json_integer_value(displayNumObj);
+	obs_data_set_int(displaySettings, "display", displayNum);
+	blog(LOG_INFO, "Set display to %d", displayNum);
 #endif
 
 	obs_source_update(displaySource, displaySettings);
-
-	blog(LOG_INFO, "Set display to %d", displayNum);
 
 	return 0;
 }
@@ -652,7 +682,7 @@ static const int initializeWebcam(json_t *obj)
 	const char *deviceId = json_string_value(deviceIdObj);
 	obs_data_t *settings = obs_data_create();
 
-#ifndef _WIN64
+#ifndef _WIN32
 	// osx wants json obj for resolution
 	char resolution[128];
 	sprintf(resolution, "{ \"width\": %d, \"height\": %d }", inputWidth,
@@ -782,7 +812,7 @@ static int initializeRecording(json_t *obj)
 	struct obs_video_info ovi;
 	ovi.adapter = 0;
 	ovi.gpu_conversion = false;
-#ifndef _WIN64
+#ifndef _WIN32
 	ovi.graphics_module = "libobs-opengl";
 #else
 	ovi.graphics_module = "libobs-d3d11";

@@ -181,6 +181,9 @@ struct gs_monitor_info {
 	long y;
 	long cx;
 	long cy;
+#ifdef _WIN32
+	void *monitorHandle;
+#endif
 };
 
 struct gs_tvertarray {

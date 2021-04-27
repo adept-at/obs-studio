@@ -327,6 +327,10 @@ static bool get_monitor_properties(json_t *array, int monitor_idx)
 	json_object_set_new(obj, "x", json_integer(info.x));
 	json_object_set_new(obj, "y", json_integer(info.y));
 
+#ifdef _WIN32
+	json_object_set_new(obj, "monitorHandle", json_integer(info.monitorHandle));
+#endif
+
 	dstr_free(&monitor_desc);
 
 	return true;
